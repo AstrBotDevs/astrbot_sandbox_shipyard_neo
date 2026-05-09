@@ -1,0 +1,22 @@
+{
+  "shipyard_neo_endpoint": {
+    "description": "Shipyard Neo API Endpoint",
+    "type": "string",
+    "hint": "Shipyard Neo(Bay) API endpoint. Default: http://127.0.0.1:8114."
+  },
+  "shipyard_neo_access_token": {
+    "description": "Shipyard Neo Access Token",
+    "type": "string",
+    "hint": "Bay API key. Leave empty to auto-discover Bay credentials.json."
+  },
+  "shipyard_neo_profile": {
+    "description": "Shipyard Neo Profile",
+    "type": "string",
+    "hint": "Shipyard Neo sandbox profile, for example python-default."
+  },
+  "shipyard_neo_ttl": {
+    "description": "Shipyard Neo Sandbox TTL",
+    "type": "int",
+    "hint": "Shipyard Neo sandbox TTL in seconds."
+  }
+}
