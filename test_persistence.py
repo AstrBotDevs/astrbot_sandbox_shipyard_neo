@@ -346,12 +346,6 @@ async def test_shipyard_neo_auto_mode_reuses_configured_token(monkeypatch):
             provider_module.DEFAULT_SHIPYARD_NEO_ENDPOINT,
             "pre-configured-token",
         ),
-        (
-            {"url": "http://127.0.0.1:8114"},
-            "",
-            provider_module.DEFAULT_SHIPYARD_NEO_ENDPOINT,
-            "",
-        ),
     ],
 )
 def test_shipyard_neo_provider_auto_like_endpoints_do_not_trigger_discovery(
@@ -384,16 +378,72 @@ def test_shipyard_neo_provider_auto_like_endpoints_do_not_trigger_discovery(
     assert config["access_token"] == expected_token
 
 
+def test_shipyard_neo_provider_rejects_non_string_endpoint():
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": {"url": "http://127.0.0.1:8114"},
+                }
+            }
+        }
+    )
+
+    with pytest.raises(TypeError, match="shipyard_neo_endpoint must be a string"):
+        provider.build_create_config(context, "dashboard")
+
+
+def test_shipyard_neo_provider_discovers_credentials_for_non_auto_endpoint(
+    monkeypatch,
+):
+    recorded = {}
+
+    def fake_discover_bay_credentials(endpoint: str) -> str:
+        recorded["endpoint"] = endpoint
+        return "discovered-token"
+
+    monkeypatch.setattr(
+        provider_module,
+        "_discover_bay_credentials",
+        fake_discover_bay_credentials,
+    )
+
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": " https://bay.example.com ",
+                    "shipyard_neo_access_token": "",
+                }
+            }
+        }
+    )
+
+    config = provider.build_create_config(context, "dashboard")
+
+    assert recorded["endpoint"] == "https://bay.example.com"
+    assert config["endpoint_url"] == "https://bay.example.com"
+    assert config["access_token"] == "discovered-token"
+
+
+def _assert_core_bay_env(env: list[str]) -> None:
+    assert "BAY_SECURITY__ALLOW_ANONYMOUS=false" in env
+    assert any(entry.startswith("BAY_SERVER__HOST=") for entry in env)
+    assert any(entry.startswith("BAY_SERVER__PORT=") for entry in env)
+
+
 def test_bay_manager_omits_empty_api_key_env():
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
         BayContainerManager,
     )
 
     manager = BayContainerManager(access_token="")
+    env = manager.build_container_env()
 
-    assert all(
-        env != "BAY_SECURITY__API_KEY=" for env in manager._build_container_env()
-    )
+    _assert_core_bay_env(env)
+    assert all(not entry.startswith("BAY_SECURITY__API_KEY=") for entry in env)
 
 
 def test_bay_manager_includes_api_key_env_when_token_is_configured():
@@ -402,8 +452,10 @@ def test_bay_manager_includes_api_key_env_when_token_is_configured():
     )
 
     manager = BayContainerManager(access_token="token")
+    env = manager.build_container_env()
 
-    assert "BAY_SECURITY__API_KEY=token" in manager._build_container_env()
+    _assert_core_bay_env(env)
+    assert "BAY_SECURITY__API_KEY=token" in env
 
 
 @pytest.mark.asyncio

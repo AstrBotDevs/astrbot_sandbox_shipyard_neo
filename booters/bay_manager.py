@@ -94,7 +94,7 @@ class BayContainerManager:
         config = {
             "Image": self._image,
             "Labels": {BAY_LABEL: "true"},
-            "Env": self._build_container_env(),
+            "Env": self.build_container_env(),
             "HostConfig": {
                 "PortBindings": {
                     f"{BAY_PORT}/tcp": [{"HostPort": str(self._host_port)}],
@@ -114,7 +114,7 @@ class BayContainerManager:
 
         return f"http://127.0.0.1:{self._host_port}"
 
-    def _build_container_env(self) -> list[str]:
+    def build_container_env(self) -> list[str]:
         env = [
             "BAY_SERVER__HOST=0.0.0.0",
             f"BAY_SERVER__PORT={BAY_PORT}",

@@ -86,6 +86,8 @@ class ShipyardNeoSandboxProvider:
     def build_create_config(self, context: Context, session_id: str) -> dict:
         merged = self._merged_sandbox_config(context, session_id)
         raw_endpoint = merged.get("shipyard_neo_endpoint")
+        if raw_endpoint is not None and not isinstance(raw_endpoint, str):
+            raise TypeError("shipyard_neo_endpoint must be a string")
         endpoint = raw_endpoint.strip() if isinstance(raw_endpoint, str) else ""
         if not endpoint:
             endpoint = DEFAULT_SHIPYARD_NEO_ENDPOINT
