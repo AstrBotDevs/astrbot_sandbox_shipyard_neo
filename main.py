@@ -10,7 +10,7 @@ from .provider import ShipyardNeoSandboxProvider
 @register(
     "astrbot_sandbox_shipyard_neo",
     "AstrBot Team",
-    "Shipyard Neo sandbox runtime provider for AstrBot",
+    "为 AstrBot 提供 Shipyard Neo 沙盒运行时。",
     "0.1.0",
 )
 class ShipyardNeoSandboxRuntimePlugin(Star):
