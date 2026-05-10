@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -482,6 +483,91 @@ def test_bay_manager_includes_api_key_env_when_token_is_configured():
 
     _assert_core_bay_env(env)
     assert "BAY_SECURITY__API_KEY=token" in env
+
+
+def test_bay_manager_configures_pullable_default_profile_image():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        DEFAULT_SHIP_RUNTIME_IMAGE,
+        BayContainerManager,
+    )
+
+    manager = BayContainerManager(access_token="token")
+    env = manager.build_container_env()
+    profiles_env = next(item for item in env if item.startswith("BAY_PROFILES="))
+
+    profiles = json.loads(profiles_env.removeprefix("BAY_PROFILES="))
+
+    assert profiles[0]["id"] == "python-default"
+    assert profiles[0]["image"] == DEFAULT_SHIP_RUNTIME_IMAGE
+
+
+def test_bay_manager_detects_mismatched_existing_container_env():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        BayContainerManager,
+    )
+
+    manager = BayContainerManager(access_token="token")
+
+    assert manager.container_env_matches({"Config": {"Env": []}}) is False
+
+
+def test_bay_manager_accepts_matching_existing_container_env():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        BayContainerManager,
+    )
+
+    manager = BayContainerManager(access_token="token")
+
+    assert (
+        manager.container_env_matches(
+            {"Config": {"Env": manager.build_container_env()}}
+        )
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_boot_closes_client_when_readiness_fails(monkeypatch):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    calls = []
+
+    class FakeClient:
+        async def __aenter__(self):
+            calls.append("enter")
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            calls.append("exit")
+
+        async def list_profiles(self):
+            return SimpleNamespace(items=[])
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            return FakeReadySandbox("failed_sbx")
+
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    async def fail_readiness(self, sandbox):
+        raise RuntimeError("sandbox failed")
+
+    monkeypatch.setattr(ShipyardNeoBooter, "_wait_until_ready", fail_readiness)
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+    )
+
+    with pytest.raises(RuntimeError, match="sandbox failed"):
+        await booter.boot("ignored")
+
+    assert calls == ["enter", "exit"]
+    assert booter.bay_client is None
 
 
 @pytest.mark.asyncio

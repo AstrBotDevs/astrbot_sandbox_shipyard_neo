@@ -23,6 +23,7 @@ from astrbot.api import logger
 # ---------------------------------------------------------------------------
 
 BAY_IMAGE = "ghcr.io/astrbotdevs/shipyard-neo-bay:latest"
+DEFAULT_SHIP_RUNTIME_IMAGE = "soulter/shipyard-ship:latest"
 BAY_CONTAINER_NAME = "astrbot-bay"
 BAY_LABEL = "astrbot.bay.managed"
 BAY_PORT = 8114
@@ -67,6 +68,16 @@ class BayContainerManager:
 
         # 1. Look for an existing managed container
         existing = await self._find_managed_container()
+        if existing is not None:
+            if not self.container_env_matches(existing):
+                logger.info(
+                    "[BayManager] Recreating Bay container because configuration changed"
+                )
+                container = await self._docker.containers.get(existing["Id"])
+                await container.stop()
+                await container.delete(force=True)
+                existing = None
+
         if existing is not None:
             state = existing["State"]
             if state.get("Running"):
@@ -119,12 +130,29 @@ class BayContainerManager:
             "BAY_SERVER__HOST=0.0.0.0",
             f"BAY_SERVER__PORT={BAY_PORT}",
             "BAY_DATA_DIR=/app/data",
+            f"BAY_PROFILES={json.dumps(self.build_default_profiles())}",
             # allow_anonymous=false lets Bay auto-provision when no key is supplied.
             "BAY_SECURITY__ALLOW_ANONYMOUS=false",
         ]
         if self._access_token:
             env.append(f"BAY_SECURITY__API_KEY={self._access_token}")
         return env
+
+    def build_default_profiles(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "python-default",
+                "image": DEFAULT_SHIP_RUNTIME_IMAGE,
+                "resources": {"cpus": 1.0, "memory": "1g"},
+                "capabilities": ["filesystem", "shell", "python"],
+                "idle_timeout": 1800,
+            }
+        ]
+
+    def container_env_matches(self, container_info: dict[str, Any]) -> bool:
+        existing = set(container_info.get("Config", {}).get("Env") or [])
+        desired = set(self.build_container_env())
+        return desired.issubset(existing)
 
     async def wait_healthy(self, timeout: int = HEALTH_TIMEOUT_S) -> None:
         """Block until Bay's ``/health`` endpoint returns 200."""

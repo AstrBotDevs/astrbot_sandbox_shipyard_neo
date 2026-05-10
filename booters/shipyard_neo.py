@@ -444,58 +444,64 @@ class ShipyardNeoBooter(ComputerBooter):
         )
         await self._client.__aenter__()
 
-        if self._resume and self._existing_sandbox_id:
-            from shipyard_neo.errors import NotFoundError, SandboxExpiredError
+        try:
+            if self._resume and self._existing_sandbox_id:
+                from shipyard_neo.errors import NotFoundError, SandboxExpiredError
 
-            try:
-                self._sandbox = await self._client.get_sandbox(
-                    self._existing_sandbox_id
-                )
-                resolved_profile = self._sandbox.profile
-            except (NotFoundError, SandboxExpiredError) as exc:
-                logger.info(
-                    "[Computer] Shipyard Neo resume target unavailable; creating a new sandbox instead: sandbox_id=%s error=%s",
-                    self._existing_sandbox_id,
-                    exc,
-                )
+                try:
+                    self._sandbox = await self._client.get_sandbox(
+                        self._existing_sandbox_id
+                    )
+                    resolved_profile = self._sandbox.profile
+                except (NotFoundError, SandboxExpiredError) as exc:
+                    logger.info(
+                        "[Computer] Shipyard Neo resume target unavailable; creating a new sandbox instead: sandbox_id=%s error=%s",
+                        self._existing_sandbox_id,
+                        exc,
+                    )
+                    resolved_profile = await self._resolve_profile(self._client)
+                    self._sandbox = await self._client.create_sandbox(
+                        profile=resolved_profile,
+                        ttl=self._ttl,
+                    )
+            else:
+                if self._resume and not self._existing_sandbox_id:
+                    logger.info(
+                        "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
+                    )
+                # Resolve profile: user-specified > smart selection > default
                 resolved_profile = await self._resolve_profile(self._client)
                 self._sandbox = await self._client.create_sandbox(
                     profile=resolved_profile,
                     ttl=self._ttl,
                 )
-        else:
-            if self._resume and not self._existing_sandbox_id:
-                logger.info(
-                    "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
-                )
-            # Resolve profile: user-specified > smart selection > default
-            resolved_profile = await self._resolve_profile(self._client)
-            self._sandbox = await self._client.create_sandbox(
-                profile=resolved_profile,
-                ttl=self._ttl,
+
+            # --- Readiness gate: wait until sandbox session is READY ---
+            await self._wait_until_ready(self._sandbox)
+
+            self._shell = NeoShellComponent(self._sandbox)
+            self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
+            self._python = NeoPythonComponent(self._sandbox)
+
+            caps = self.capabilities or ()
+            self._browser = (
+                NeoBrowserComponent(self._sandbox) if "browser" in caps else None
             )
 
-        # --- Readiness gate: wait until sandbox session is READY ---
-        await self._wait_until_ready(self._sandbox)
-
-        self._shell = NeoShellComponent(self._sandbox)
-        self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
-        self._python = NeoPythonComponent(self._sandbox)
-
-        caps = self.capabilities or ()
-        self._browser = (
-            NeoBrowserComponent(self._sandbox) if "browser" in caps else None
-        )
-
-        logger.info(
-            "Got Shipyard Neo sandbox: %s (profile=%s, capabilities=%s, auto=%s, persistent=%s, resume=%s)",
-            self._sandbox.id,
-            resolved_profile,
-            list(caps),
-            bool(self._bay_manager),
-            self._persistent,
-            self._resume,
-        )
+            logger.info(
+                "Got Shipyard Neo sandbox: %s (profile=%s, capabilities=%s, auto=%s, persistent=%s, resume=%s)",
+                self._sandbox.id,
+                resolved_profile,
+                list(caps),
+                bool(self._bay_manager),
+                self._persistent,
+                self._resume,
+            )
+        except Exception:
+            await self._client.__aexit__(None, None, None)
+            self._client = None
+            self._sandbox = None
+            raise
 
     async def _wait_until_ready(self, sandbox: Sandbox) -> None:
         """Poll sandbox status until READY, or raise on FAILED / timeout.
