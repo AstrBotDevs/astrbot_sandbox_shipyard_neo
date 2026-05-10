@@ -11,6 +11,7 @@ from astrbot.api import logger
 from astrbot.core.computer.booters.base import ComputerBooter
 from astrbot.core.star.context import Context
 
+from .booters import shipyard_neo as shipyard_neo_booter
 from .booters.shipyard_neo import ShipyardNeoBooter
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
@@ -113,6 +114,43 @@ class ShipyardNeoSandboxProvider:
 
     def get_idle_timeout(self, context: Context, session_id: str) -> float:
         return 0.0
+
+    async def check_persistent_sandbox_exists(self, record: dict) -> bool:
+        connect_info = dict(record.get("connect_info") or {})
+        sandbox_id = str(connect_info.get("sandbox_id") or "").strip()
+        if not sandbox_id:
+            return True
+
+        endpoint_url = str(connect_info.get("endpoint_url") or "").strip()
+        access_token = str(
+            connect_info.get("access_token")
+            or self.plugin_config.get("shipyard_neo_access_token")
+            or ""
+        ).strip()
+        if not access_token:
+            access_token = _discover_bay_credentials(endpoint_url)
+        if not endpoint_url or not access_token:
+            return True
+
+        try:
+            from shipyard_neo.errors import NotFoundError, SandboxExpiredError
+        except ImportError:
+            return True
+
+        client_cls = getattr(shipyard_neo_booter, "BayClient", None)
+        if client_cls is None:
+            return True
+
+        client = client_cls(
+            endpoint_url=endpoint_url,
+            access_token=access_token,
+        )
+        async with client:
+            try:
+                await client.get_sandbox(sandbox_id)
+            except (NotFoundError, SandboxExpiredError):
+                return False
+        return True
 
     async def create_booter(
         self, context: Context, session_id: str, sandbox_id: str, config: dict

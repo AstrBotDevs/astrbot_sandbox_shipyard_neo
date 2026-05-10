@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from data.plugins.astrbot_sandbox_shipyard_neo import provider as provider_module
+from data.plugins.astrbot_sandbox_shipyard_neo.booters import shipyard_neo
 
 
 def test_shipyard_neo_provider_connect_info_tracks_sandbox_id():
@@ -183,3 +184,114 @@ async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkey
     await booter.boot("ignored")
 
     assert recorded == [("create", "python-default", 3600)]
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_provider_reports_persistent_sandbox_exists(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs))
+
+        async def __aenter__(self):
+            calls.append("enter")
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            calls.append("exit")
+
+        async def get_sandbox(self, sandbox_id: str):
+            calls.append(("get", sandbox_id))
+            return object()
+
+    monkeypatch.setattr(shipyard_neo, "BayClient", FakeClient)
+
+    provider = provider_module.ShipyardNeoSandboxProvider()
+
+    exists = await provider.check_persistent_sandbox_exists(
+        {
+            "connect_info": {
+                "endpoint_url": "https://example.com",
+                "access_token": "token",
+                "sandbox_id": "sbx_123",
+            }
+        }
+    )
+
+    assert exists is True
+    assert calls == [
+        ("init", {"endpoint_url": "https://example.com", "access_token": "token"}),
+        "enter",
+        ("get", "sbx_123"),
+        "exit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_provider_reports_missing_persistent_sandbox(monkeypatch):
+    from shipyard_neo.errors import NotFoundError
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get_sandbox(self, sandbox_id: str):
+            raise NotFoundError()
+
+    monkeypatch.setattr(shipyard_neo, "BayClient", lambda **kwargs: FakeClient())
+
+    provider = provider_module.ShipyardNeoSandboxProvider()
+
+    exists = await provider.check_persistent_sandbox_exists(
+        {
+            "connect_info": {
+                "endpoint_url": "https://example.com",
+                "access_token": "token",
+                "sandbox_id": "sbx_123",
+            }
+        }
+    )
+
+    assert exists is False
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_provider_uses_plugin_token_for_existence_check(
+    monkeypatch,
+):
+    recorded = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            recorded.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get_sandbox(self, sandbox_id: str):
+            return object()
+
+    monkeypatch.setattr(shipyard_neo, "BayClient", FakeClient)
+
+    provider = provider_module.ShipyardNeoSandboxProvider(
+        plugin_config={"shipyard_neo_access_token": "plugin-token"}
+    )
+
+    exists = await provider.check_persistent_sandbox_exists(
+        {
+            "connect_info": {
+                "endpoint_url": "https://example.com",
+                "sandbox_id": "sbx_123",
+            }
+        }
+    )
+
+    assert exists is True
+    assert recorded["access_token"] == "plugin-token"
