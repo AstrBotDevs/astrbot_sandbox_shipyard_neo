@@ -23,7 +23,7 @@ from astrbot.api import logger
 # ---------------------------------------------------------------------------
 
 BAY_IMAGE = "ghcr.io/astrbotdevs/shipyard-neo-bay:latest"
-DEFAULT_SHIP_RUNTIME_IMAGE = "soulter/shipyard-ship:latest"
+DEFAULT_SHIP_RUNTIME_IMAGE = "ghcr.io/astrbotdevs/shipyard-neo-ship:latest"
 BAY_CONTAINER_NAME = "astrbot-bay"
 BAY_LABEL = "astrbot.bay.managed"
 BAY_PORT = 8114

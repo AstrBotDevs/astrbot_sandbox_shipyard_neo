@@ -499,6 +499,7 @@ def test_bay_manager_configures_pullable_default_profile_image():
 
     assert profiles[0]["id"] == "python-default"
     assert profiles[0]["image"] == DEFAULT_SHIP_RUNTIME_IMAGE
+    assert profiles[0]["image"] == "ghcr.io/astrbotdevs/shipyard-neo-ship:latest"
 
 
 def test_bay_manager_detects_mismatched_existing_container_env():
