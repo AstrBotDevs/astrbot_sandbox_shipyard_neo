@@ -5,7 +5,6 @@ import os
 import secrets
 import shlex
 import sys
-from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from astrbot.api import logger
@@ -51,33 +50,6 @@ def _slice_content_by_lines(
     start = 0 if offset is None else offset
     selected = lines[start:] if limit is None else lines[start : start + limit]
     return "".join(selected)
-
-
-@asynccontextmanager
-async def _managed_bay_client(endpoint_url: str, access_token: str):
-    """Enter a BayClient and guarantee cleanup on boot failure.
-
-    On successful boot the caller is responsible for closing the client
-    (typically via :meth:`ShipyardNeoBooter.shutdown`).
-    """
-    client = BayClient(
-        endpoint_url=endpoint_url,
-        access_token=access_token,
-    )
-    await client.__aenter__()
-    try:
-        yield client
-    except Exception:
-        exc_info = sys.exc_info()
-        try:
-            await client.__aexit__(*exc_info)
-        except Exception as cleanup_err:
-            logger.warning(
-                "[Computer] Error cleaning up Shipyard Neo client during boot failure: %s",
-                cleanup_err,
-            )
-        raise
-    # Intentionally no cleanup on success — caller owns the client lifetime.
 
 
 class NeoPythonComponent(PythonComponent):
@@ -467,65 +439,74 @@ class ShipyardNeoBooter(ComputerBooter):
                 "or ensure Bay's credentials.json is accessible for auto-discovery."
             )
 
+        self._client = BayClient(
+            endpoint_url=self._endpoint_url,
+            access_token=self._access_token,
+        )
+        await self._client.__aenter__()
+
         try:
-            async with _managed_bay_client(
-                self._endpoint_url, self._access_token
-            ) as client:
-                self._client = client
+            if self._resume and self._existing_sandbox_id:
+                from shipyard_neo.errors import NotFoundError, SandboxExpiredError
 
-                if self._resume and self._existing_sandbox_id:
-                    from shipyard_neo.errors import NotFoundError, SandboxExpiredError
-
-                    try:
-                        self._sandbox = await self._client.get_sandbox(
-                            self._existing_sandbox_id
-                        )
-                        resolved_profile = self._sandbox.profile
-                    except (NotFoundError, SandboxExpiredError) as exc:
-                        logger.info(
-                            "[Computer] Shipyard Neo resume target unavailable; creating a new sandbox instead: sandbox_id=%s error=%s",
-                            self._existing_sandbox_id,
-                            exc,
-                        )
-                        resolved_profile = await self._resolve_profile(self._client)
-                        self._sandbox = await self._client.create_sandbox(
-                            profile=resolved_profile,
-                            ttl=self._ttl,
-                        )
-                else:
-                    if self._resume and not self._existing_sandbox_id:
-                        logger.info(
-                            "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
-                        )
-                    # Resolve profile: user-specified > smart selection > default
+                try:
+                    self._sandbox = await self._client.get_sandbox(
+                        self._existing_sandbox_id
+                    )
+                    resolved_profile = self._sandbox.profile
+                except (NotFoundError, SandboxExpiredError) as exc:
+                    logger.info(
+                        "[Computer] Shipyard Neo resume target unavailable; creating a new sandbox instead: sandbox_id=%s error=%s",
+                        self._existing_sandbox_id,
+                        exc,
+                    )
                     resolved_profile = await self._resolve_profile(self._client)
                     self._sandbox = await self._client.create_sandbox(
                         profile=resolved_profile,
                         ttl=self._ttl,
                     )
-
-                # --- Readiness gate: wait until sandbox session is READY ---
-                await self._wait_until_ready(self._sandbox)
-
-                self._shell = NeoShellComponent(self._sandbox)
-                self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
-                self._python = NeoPythonComponent(self._sandbox)
-
-                caps = self.capabilities or ()
-                self._browser = (
-                    NeoBrowserComponent(self._sandbox) if "browser" in caps else None
+            else:
+                if self._resume and not self._existing_sandbox_id:
+                    logger.info(
+                        "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
+                    )
+                # Resolve profile: user-specified > smart selection > default
+                resolved_profile = await self._resolve_profile(self._client)
+                self._sandbox = await self._client.create_sandbox(
+                    profile=resolved_profile,
+                    ttl=self._ttl,
                 )
 
-                logger.info(
-                    "Got Shipyard Neo sandbox: %s (profile=%s, capabilities=%s, auto=%s, persistent=%s, resume=%s)",
-                    self._sandbox.id,
-                    resolved_profile,
-                    list(caps),
-                    bool(self._bay_manager),
-                    self._persistent,
-                    self._resume,
-                )
+            # --- Readiness gate: wait until sandbox session is READY ---
+            await self._wait_until_ready(self._sandbox)
+
+            self._shell = NeoShellComponent(self._sandbox)
+            self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
+            self._python = NeoPythonComponent(self._sandbox)
+
+            caps = self.capabilities or ()
+            self._browser = (
+                NeoBrowserComponent(self._sandbox) if "browser" in caps else None
+            )
+
+            logger.info(
+                "Got Shipyard Neo sandbox: %s (profile=%s, capabilities=%s, auto=%s, persistent=%s, resume=%s)",
+                self._sandbox.id,
+                resolved_profile,
+                list(caps),
+                bool(self._bay_manager),
+                self._persistent,
+                self._resume,
+            )
         except Exception:
+            exc_info = sys.exc_info()
+            try:
+                await self._client.__aexit__(*exc_info)
+            except Exception as cleanup_err:
+                logger.warning(
+                    "[Computer] Error cleaning up Shipyard Neo client during boot failure: %s",
+                    cleanup_err,
+                )
             self._client = None
             self._sandbox = None
             raise
