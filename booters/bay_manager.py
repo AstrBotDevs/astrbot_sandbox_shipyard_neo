@@ -37,9 +37,11 @@ class BayContainerManager:
         self,
         image: str = BAY_IMAGE,
         host_port: int = BAY_PORT,
+        access_token: str = "",
     ) -> None:
         self._image = image
         self._host_port = host_port
+        self._access_token = access_token
         self._docker: aiodocker.Docker | None = None
         self._container: Any = None
 
@@ -92,13 +94,7 @@ class BayContainerManager:
         config = {
             "Image": self._image,
             "Labels": {BAY_LABEL: "true"},
-            "Env": [
-                "BAY_SERVER__HOST=0.0.0.0",
-                f"BAY_SERVER__PORT={BAY_PORT}",
-                "BAY_DATA_DIR=/app/data",
-                # allow_anonymous=false → auto-provisions API key
-                "BAY_SECURITY__ALLOW_ANONYMOUS=false",
-            ],
+            "Env": self.build_container_env(),
             "HostConfig": {
                 "PortBindings": {
                     f"{BAY_PORT}/tcp": [{"HostPort": str(self._host_port)}],
@@ -117,6 +113,18 @@ class BayContainerManager:
         logger.info("[BayManager] Bay container started: %s", BAY_CONTAINER_NAME)
 
         return f"http://127.0.0.1:{self._host_port}"
+
+    def build_container_env(self) -> list[str]:
+        env = [
+            "BAY_SERVER__HOST=0.0.0.0",
+            f"BAY_SERVER__PORT={BAY_PORT}",
+            "BAY_DATA_DIR=/app/data",
+            # allow_anonymous=false lets Bay auto-provision when no key is supplied.
+            "BAY_SECURITY__ALLOW_ANONYMOUS=false",
+        ]
+        if self._access_token:
+            env.append(f"BAY_SECURITY__API_KEY={self._access_token}")
+        return env
 
     async def wait_healthy(self, timeout: int = HEALTH_TIMEOUT_S) -> None:
         """Block until Bay's ``/health`` endpoint returns 200."""
