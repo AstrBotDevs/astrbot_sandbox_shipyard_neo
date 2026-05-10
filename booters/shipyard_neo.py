@@ -444,6 +444,10 @@ class ShipyardNeoBooter(ComputerBooter):
             self._sandbox = await self._client.get_sandbox(self._existing_sandbox_id)
             resolved_profile = self._sandbox.profile
         else:
+            if self._resume and not self._existing_sandbox_id:
+                logger.info(
+                    "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
+                )
             # Resolve profile: user-specified > smart selection > default
             resolved_profile = await self._resolve_profile(self._client)
             self._sandbox = await self._client.create_sandbox(

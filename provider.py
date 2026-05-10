@@ -116,12 +116,15 @@ class ShipyardNeoSandboxProvider:
     ) -> ComputerBooter:
         if self._boot_hook is not None:
             return await self._boot_hook(context, session_id, sandbox_id, config)
-        client = ShipyardNeoBooter(
+        booter_config = {
             **config,
-            persistent=True,
-            persistent_name=str(config.get("persistent_name") or sandbox_id).strip(),
-            resume=bool(config.get("resume", False)),
-            existing_sandbox_id=config.get("sandbox_id"),
+            "persistent": True,
+            "persistent_name": str(config.get("persistent_name") or sandbox_id).strip(),
+            "resume": bool(config.get("resume", False)),
+            "existing_sandbox_id": config.get("sandbox_id"),
+        }
+        client = ShipyardNeoBooter(
+            **booter_config,
         )
         await client.boot(uuid.uuid5(uuid.NAMESPACE_DNS, session_id).hex)
         setattr(client, "sandbox_id", sandbox_id)

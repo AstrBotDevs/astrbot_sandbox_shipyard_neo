@@ -7,6 +7,7 @@ from data.plugins.astrbot_sandbox_shipyard_neo import provider as provider_modul
 
 def test_shipyard_neo_provider_connect_info_tracks_sandbox_id():
     provider = provider_module.ShipyardNeoSandboxProvider()
+    assert provider_module.ShipyardNeoSandboxProvider.supports_persistent_reconnect is True
 
     info = provider.build_connect_info(
         "Named",
@@ -52,3 +53,40 @@ async def test_shipyard_neo_provider_passes_reconnect_metadata(monkeypatch):
     assert recorded["persistent_name"] == "neo-1"
     assert recorded["resume"] is False
     assert getattr(booter, "sandbox_id") == "neo-1"
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_conflicts(
+    monkeypatch,
+):
+    recorded = {}
+
+    class FakeBooter:
+        def __init__(self, **kwargs):
+            recorded.update(kwargs)
+
+        async def boot(self, session_id: str):
+            recorded["boot_session_id"] = session_id
+
+    monkeypatch.setattr(provider_module, "ShipyardNeoBooter", FakeBooter)
+
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    await provider.create_booter(
+        context=SimpleNamespace(),
+        session_id="dashboard",
+        sandbox_id="neo-2",
+        config={
+            "endpoint_url": "https://example.com",
+            "access_token": "token",
+            "profile": "python-default",
+            "ttl": 3600,
+            "persistent_name": " neo-custom ",
+            "resume": True,
+            "sandbox_id": "sbx_existing",
+        },
+    )
+
+    assert recorded["persistent"] is True
+    assert recorded["persistent_name"] == "neo-custom"
+    assert recorded["resume"] is True
+    assert recorded["existing_sandbox_id"] == "sbx_existing"
