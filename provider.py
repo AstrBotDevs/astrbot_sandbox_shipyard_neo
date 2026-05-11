@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from astrbot.api import logger
 from astrbot.core.computer.booters.base import ComputerBooter
@@ -15,6 +16,46 @@ from .booters import shipyard_neo as shipyard_neo_booter
 from .booters.shipyard_neo import SHIPYARD_NEO_AUTO_ENDPOINT, ShipyardNeoBooter
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
+DEFAULT_SHIPYARD_NEO_ENDPOINT = "http://127.0.0.1:8114"
+_AUTO_START_HOSTS = {"127.0.0.1", "localhost"}
+
+
+def _normalize_shipyard_neo_endpoint(endpoint: str) -> tuple[str, bool]:
+    raw = (endpoint or "").strip()
+    if not raw or raw == SHIPYARD_NEO_AUTO_ENDPOINT:
+        return DEFAULT_SHIPYARD_NEO_ENDPOINT, True
+
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.hostname:
+        return raw, False
+    try:
+        port = parsed.port
+    except ValueError:
+        return raw, False
+    netloc = parsed.hostname
+    if port is not None:
+        netloc = f"{netloc}:{port}"
+    path = "" if parsed.path == "/" else parsed.path.rstrip("/")
+    normalized = urlunparse(
+        (
+            parsed.scheme.lower(),
+            netloc,
+            path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    supports_auto_start = (
+        parsed.scheme.lower() == "http"
+        and parsed.hostname.lower() in _AUTO_START_HOSTS
+        and port == 8114
+        and path == ""
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+    )
+    return normalized, supports_auto_start
 
 
 def _discover_bay_credentials(endpoint: str) -> str:
@@ -87,14 +128,14 @@ class ShipyardNeoSandboxProvider:
         raw_endpoint = merged.get("shipyard_neo_endpoint")
         if raw_endpoint is not None and not isinstance(raw_endpoint, str):
             raise TypeError("shipyard_neo_endpoint must be a string")
-        endpoint = raw_endpoint.strip() if isinstance(raw_endpoint, str) else ""
-        if not endpoint:
-            endpoint = SHIPYARD_NEO_AUTO_ENDPOINT
+        endpoint, supports_auto_start = _normalize_shipyard_neo_endpoint(
+            raw_endpoint if isinstance(raw_endpoint, str) else ""
+        )
         raw_token = merged.get("shipyard_neo_access_token")
         if raw_token is not None and not isinstance(raw_token, str):
             raise TypeError("shipyard_neo_access_token must be a string")
         token = raw_token.strip() if isinstance(raw_token, str) else ""
-        if not token and endpoint != SHIPYARD_NEO_AUTO_ENDPOINT:
+        if not token and not supports_auto_start:
             token = _discover_bay_credentials(endpoint)
         return {
             "endpoint_url": endpoint,
