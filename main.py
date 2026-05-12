@@ -48,47 +48,63 @@ class ShipyardNeoSandboxRuntimePlugin(Star):
             raise
         finally:
             if provider_id:
-                detach_sandbox_provider(provider_id)
-                self._clear_shipyard_neo_builtin_tool_cache()
-                try:
-                    removed = _unregister_shipyard_neo_builtin_tools()
-                except Exception:
-                    logger.warning(
-                        "Shipyard Neo builtin tool cleanup failed during termination: provider=%s",
-                        provider_id,
-                        exc_info=True,
-                    )
-                else:
-                    if removed:
-                        logger.info(
-                            "Unregistered %d builtin tool(s) for Shipyard Neo: %s",
-                            len(removed),
-                            ", ".join(removed),
-                        )
+                _finalize_shipyard_neo_provider(
+                    provider_id, getattr(self, "context", None)
+                )
 
     def _clear_shipyard_neo_builtin_tool_cache(self) -> None:
-        context = getattr(self, "context", None)
-        get_tool_manager = getattr(context, "get_llm_tool_manager", None)
-        if not callable(get_tool_manager):
-            return
+        _clear_shipyard_neo_builtin_tool_cache(getattr(self, "context", None))
 
-        try:
-            removed = get_tool_manager().clear_builtin_tool_cache_by_module_prefix(
-                SHIPYARD_NEO_TOOL_MODULE_PREFIX
-            )
-        except Exception:
-            logger.warning(
-                "Shipyard Neo builtin tool cache cleanup failed during termination",
-                exc_info=True,
-            )
-            return
 
+def _finalize_shipyard_neo_provider(provider_id: str, context: Context | None) -> None:
+    detach_sandbox_provider(provider_id)
+    _clear_shipyard_neo_builtin_tool_cache(context)
+    try:
+        removed = _unregister_shipyard_neo_builtin_tools()
+    except Exception:
+        logger.warning(
+            "Shipyard Neo builtin tool cleanup failed during termination: provider=%s",
+            provider_id,
+            exc_info=True,
+        )
+    else:
         if removed:
             logger.info(
-                "Cleared %d builtin tool cache entry(s) for Shipyard Neo: %s",
+                "Unregistered %d builtin tool(s) for Shipyard Neo: %s",
                 len(removed),
                 ", ".join(removed),
             )
+
+
+def _clear_shipyard_neo_builtin_tool_cache(context: Context | None) -> None:
+    get_tool_manager = getattr(context, "get_llm_tool_manager", None)
+    if not callable(get_tool_manager):
+        if context is None:
+            logger.debug("Skipping Shipyard Neo builtin tool cache clear: no context")
+        else:
+            logger.debug(
+                "Skipping Shipyard Neo builtin tool cache clear: context.get_llm_tool_manager is not callable (type=%s)",
+                type(get_tool_manager).__name__,
+            )
+        return
+
+    try:
+        removed = get_tool_manager().clear_builtin_tool_cache_by_module_prefix(
+            SHIPYARD_NEO_TOOL_MODULE_PREFIX
+        )
+    except Exception:
+        logger.warning(
+            "Shipyard Neo builtin tool cache cleanup failed during termination",
+            exc_info=True,
+        )
+        return
+
+    if removed:
+        logger.info(
+            "Cleared %d builtin tool cache entry(s) for Shipyard Neo: %s",
+            len(removed),
+            ", ".join(removed),
+        )
 
 
 def _unregister_shipyard_neo_builtin_tools() -> list[str]:

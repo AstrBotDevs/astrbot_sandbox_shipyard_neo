@@ -20,6 +20,12 @@ from .booters.shipyard_neo_endpoint import (
 )
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
+_SHIPYARD_NEO_TTL_KEY = "sandbox_ttl"
+_SHIPYARD_NEO_TTL_ALIASES = ("shipyard_neo_ttl",)
+_SHIPYARD_NEO_DEFAULT_TTL_SECONDS = 3600
+_SHIPYARD_NEO_IDLE_TIMEOUT_KEY = "sandbox_idle_timeout"
+_SHIPYARD_NEO_IDLE_TIMEOUT_ALIASES = ("shipyard_neo_idle_timeout",)
+_SHIPYARD_NEO_DEFAULT_IDLE_TIMEOUT_SECONDS = 0.0
 
 
 def _discover_bay_credentials(endpoint: str) -> str:
@@ -113,9 +119,9 @@ class ShipyardNeoSandboxProvider:
             ),
             "ttl": resolve_sandbox_timeout(
                 merged,
-                "sandbox_ttl",
-                aliases=("shipyard_neo_ttl",),
-                default=3600,
+                _SHIPYARD_NEO_TTL_KEY,
+                aliases=_SHIPYARD_NEO_TTL_ALIASES,
+                default=_SHIPYARD_NEO_DEFAULT_TTL_SECONDS,
             ),
         }
 
@@ -140,9 +146,9 @@ class ShipyardNeoSandboxProvider:
         merged = self._merged_sandbox_config(context, session_id)
         return resolve_sandbox_timeout(
             merged,
-            "sandbox_idle_timeout",
-            aliases=("shipyard_neo_idle_timeout",),
-            default=0.0,
+            _SHIPYARD_NEO_IDLE_TIMEOUT_KEY,
+            aliases=_SHIPYARD_NEO_IDLE_TIMEOUT_ALIASES,
+            default=_SHIPYARD_NEO_DEFAULT_IDLE_TIMEOUT_SECONDS,
         )
 
     async def check_persistent_sandbox_exists(self, record: dict) -> bool:
