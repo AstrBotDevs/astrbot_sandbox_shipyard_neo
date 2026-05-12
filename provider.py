@@ -9,6 +9,7 @@ from typing import Any
 
 from astrbot.api import logger
 from astrbot.core.computer.booters.base import ComputerBooter
+from astrbot.core.computer.sandbox_timeouts import resolve_sandbox_timeout
 from astrbot.core.star.context import Context
 
 from .booters import shipyard_neo as shipyard_neo_booter
@@ -19,6 +20,12 @@ from .booters.shipyard_neo_endpoint import (
 )
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
+_SHIPYARD_NEO_TTL_KEY = "sandbox_ttl"
+_SHIPYARD_NEO_TTL_ALIASES = ("shipyard_neo_ttl",)
+_SHIPYARD_NEO_DEFAULT_TTL_SECONDS = 3600
+_SHIPYARD_NEO_IDLE_TIMEOUT_KEY = "sandbox_idle_timeout"
+_SHIPYARD_NEO_IDLE_TIMEOUT_ALIASES = ("shipyard_neo_idle_timeout",)
+_SHIPYARD_NEO_DEFAULT_IDLE_TIMEOUT_SECONDS = 0.0
 
 
 def _discover_bay_credentials(endpoint: str) -> str:
@@ -110,7 +117,12 @@ class ShipyardNeoSandboxProvider:
             "profile": merged.get(
                 "shipyard_neo_profile", ShipyardNeoBooter.DEFAULT_PROFILE
             ),
-            "ttl": merged.get("shipyard_neo_ttl", 3600),
+            "ttl": resolve_sandbox_timeout(
+                merged,
+                _SHIPYARD_NEO_TTL_KEY,
+                aliases=_SHIPYARD_NEO_TTL_ALIASES,
+                default=_SHIPYARD_NEO_DEFAULT_TTL_SECONDS,
+            ),
         }
 
     def build_connect_info(self, sandbox_name: str, config: dict) -> dict:
@@ -131,7 +143,15 @@ class ShipyardNeoSandboxProvider:
         return connect_info
 
     def get_idle_timeout(self, context: Context, session_id: str) -> float:
-        return 0.0
+        merged = self._merged_sandbox_config(context, session_id)
+        return float(
+            resolve_sandbox_timeout(
+                merged,
+                _SHIPYARD_NEO_IDLE_TIMEOUT_KEY,
+                aliases=_SHIPYARD_NEO_IDLE_TIMEOUT_ALIASES,
+                default=_SHIPYARD_NEO_DEFAULT_IDLE_TIMEOUT_SECONDS,
+            )
+        )
 
     async def check_persistent_sandbox_exists(self, record: dict) -> bool:
         connect_info = dict(record.get("connect_info") or {})
