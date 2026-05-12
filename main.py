@@ -10,10 +10,7 @@ from astrbot.core.computer.computer_client import (
 from astrbot.core.tools.registry import unregister_builtin_tools_by_module_prefix
 
 from .provider import ShipyardNeoSandboxProvider
-
-SHIPYARD_NEO_TOOL_MODULE_PREFIX = (
-    "data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo"
-)
+from .tools.shipyard_neo import SHIPYARD_NEO_TOOL_MODULE_PREFIX
 
 
 @register(
@@ -49,20 +46,20 @@ class ShipyardNeoSandboxRuntimePlugin(Star):
         finally:
             if provider_id:
                 detach_sandbox_provider(provider_id)
-            try:
-                removed = unregister_builtin_tools_by_module_prefix(
-                    SHIPYARD_NEO_TOOL_MODULE_PREFIX
-                )
-            except Exception:
-                logger.warning(
-                    "Shipyard Neo builtin tool cleanup failed during termination: provider=%s",
-                    provider_id,
-                    exc_info=True,
-                )
-            else:
-                if removed:
-                    logger.info(
-                        "Unregistered %d builtin tool(s) for Shipyard Neo: %s",
-                        len(removed),
-                        ", ".join(removed),
+                try:
+                    removed = unregister_builtin_tools_by_module_prefix(
+                        SHIPYARD_NEO_TOOL_MODULE_PREFIX
                     )
+                except Exception:
+                    logger.warning(
+                        "Shipyard Neo builtin tool cleanup failed during termination: provider=%s",
+                        provider_id,
+                        exc_info=True,
+                    )
+                else:
+                    if removed:
+                        logger.info(
+                            "Unregistered %d builtin tool(s) for Shipyard Neo: %s",
+                            len(removed),
+                            ", ".join(removed),
+                        )

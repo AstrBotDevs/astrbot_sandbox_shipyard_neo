@@ -12,6 +12,9 @@ from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo_endpoint imp
     is_shipyard_neo_auto_endpoint,
     normalize_shipyard_neo_endpoint,
 )
+from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
+    SHIPYARD_NEO_TOOL_MODULE_PREFIX,
+)
 
 
 class FakeReadySandbox:
@@ -160,10 +163,7 @@ async def test_shipyard_neo_terminate_detaches_even_if_cleanup_fails(monkeypatch
     assert calls == [
         ("cleanup", "shipyard_neo"),
         ("detach", "shipyard_neo"),
-        (
-            "unregister",
-            plugin_main.SHIPYARD_NEO_TOOL_MODULE_PREFIX,
-        ),
+        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
     ]
 
 
@@ -200,10 +200,7 @@ async def test_shipyard_neo_terminate_detaches_on_successful_cleanup(monkeypatch
     assert calls == [
         ("cleanup", "shipyard_neo"),
         ("detach", "shipyard_neo"),
-        (
-            "unregister",
-            plugin_main.SHIPYARD_NEO_TOOL_MODULE_PREFIX,
-        ),
+        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
     ]
 
 
@@ -229,7 +226,16 @@ async def test_shipyard_neo_terminate_logs_unregister_failure_without_masking_cl
     warnings = []
 
     def fake_warning(*args, **kwargs):
-        warnings.append((args, kwargs))
+        class FakeWarningRecord:
+            exc_info = kwargs.get("exc_info")
+
+            def getMessage(self):
+                message = str(args[0])
+                if len(args) > 1:
+                    return message % args[1:]
+                return message
+
+        warnings.append(FakeWarningRecord())
 
     monkeypatch.setattr(plugin_main, "cleanup_sandbox_provider", fake_cleanup)
     monkeypatch.setattr(plugin_main, "detach_sandbox_provider", fake_detach)
@@ -248,9 +254,12 @@ async def test_shipyard_neo_terminate_logs_unregister_failure_without_masking_cl
     assert calls == [
         ("cleanup", "shipyard_neo"),
         ("detach", "shipyard_neo"),
-        ("unregister", plugin_main.SHIPYARD_NEO_TOOL_MODULE_PREFIX),
+        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
     ]
-    assert warnings
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert "Shipyard Neo builtin tool cleanup failed" in warning.getMessage()
+    assert warning.exc_info
 
 
 def test_shipyard_neo_provider_update_connect_info_populates_legacy_persistent_name():
