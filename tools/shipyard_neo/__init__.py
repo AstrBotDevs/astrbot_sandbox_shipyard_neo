@@ -13,6 +13,8 @@ from .neo_skills import (
     SyncSkillReleaseTool,
 )
 
+SHIPYARD_NEO_TOOL_MODULE_PREFIX = __name__
+
 __all__ = [
     "AnnotateExecutionTool",
     "BrowserBatchExecTool",
@@ -28,4 +30,5 @@ __all__ = [
     "RollbackSkillReleaseTool",
     "RunBrowserSkillTool",
     "SyncSkillReleaseTool",
+    "SHIPYARD_NEO_TOOL_MODULE_PREFIX",
 ]
