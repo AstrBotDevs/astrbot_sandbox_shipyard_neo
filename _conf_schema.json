@@ -16,11 +16,5 @@
     "type": "string",
     "default": "python-default",
     "hint": "Shipyard Neo 沙箱 profile。保留默认值或留空时，Bay 会自动选择最合适的 profile；手动填写时请使用 Bay 返回的 profile id。"
-  },
-  "shipyard_neo_ttl": {
-    "description": "Shipyard Neo 沙箱存活时间",
-    "type": "int",
-    "default": 3600,
-    "hint": "Shipyard Neo 沙箱的生存时间，单位为秒。默认值为 3600。"
   }
 }

@@ -9,6 +9,7 @@ from typing import Any
 
 from astrbot.api import logger
 from astrbot.core.computer.booters.base import ComputerBooter
+from astrbot.core.computer.sandbox_timeouts import resolve_sandbox_timeout
 from astrbot.core.star.context import Context
 
 from .booters import shipyard_neo as shipyard_neo_booter
@@ -110,7 +111,12 @@ class ShipyardNeoSandboxProvider:
             "profile": merged.get(
                 "shipyard_neo_profile", ShipyardNeoBooter.DEFAULT_PROFILE
             ),
-            "ttl": merged.get("shipyard_neo_ttl", 3600),
+            "ttl": resolve_sandbox_timeout(
+                merged,
+                "sandbox_ttl",
+                aliases=("shipyard_neo_ttl",),
+                default=3600,
+            ),
         }
 
     def build_connect_info(self, sandbox_name: str, config: dict) -> dict:
@@ -131,7 +137,13 @@ class ShipyardNeoSandboxProvider:
         return connect_info
 
     def get_idle_timeout(self, context: Context, session_id: str) -> float:
-        return 0.0
+        merged = self._merged_sandbox_config(context, session_id)
+        return resolve_sandbox_timeout(
+            merged,
+            "sandbox_idle_timeout",
+            aliases=("shipyard_neo_idle_timeout",),
+            default=0.0,
+        )
 
     async def check_persistent_sandbox_exists(self, record: dict) -> bool:
         connect_info = dict(record.get("connect_info") or {})
