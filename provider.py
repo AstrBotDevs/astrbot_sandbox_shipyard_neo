@@ -116,6 +116,13 @@ class ShipyardNeoSandboxProvider:
         endpoint = normalize_shipyard_neo_endpoint(
             raw_endpoint if isinstance(raw_endpoint, str) else None
         )
+        raw_autostart = merged.get("shipyard_neo_autostart")
+        if raw_autostart is not None and not isinstance(raw_autostart, str):
+            raise TypeError("shipyard_neo_autostart must be a string")
+        if raw_autostart == "default":
+            autostart = is_shipyard_neo_auto_endpoint(endpoint)
+        else:
+            autostart = str(raw_autostart).lower() == "true"
         raw_token = merged.get("shipyard_neo_access_token")
         if raw_token is not None and not isinstance(raw_token, str):
             raise TypeError("shipyard_neo_access_token must be a string")
@@ -134,6 +141,7 @@ class ShipyardNeoSandboxProvider:
                 aliases=_SHIPYARD_NEO_TTL_ALIASES,
                 default=_SHIPYARD_NEO_DEFAULT_TTL_SECONDS,
             ),
+            "is_auto_mode": autostart,
         }
 
     def build_connect_info(self, sandbox_name: str, config: dict) -> dict:

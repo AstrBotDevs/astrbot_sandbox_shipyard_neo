@@ -361,6 +361,7 @@ class ShipyardNeoBooter(ComputerBooter):
         access_token: str,
         profile: str = DEFAULT_PROFILE,
         ttl: int = 3600,
+        is_auto_mode: bool = False,
         *,
         persistent: bool = False,
         persistent_name: str | None = None,
@@ -372,6 +373,7 @@ class ShipyardNeoBooter(ComputerBooter):
         self._access_token = access_token
         self._profile = profile
         self._ttl = ttl
+        self.is_auto_mode = is_auto_mode
         self._persistent = persistent
         self._persistent_name = persistent_name
         self._resume = resume
@@ -403,11 +405,6 @@ class ShipyardNeoBooter(ComputerBooter):
             return None
         caps = getattr(self._sandbox, "capabilities", None)
         return tuple(caps) if caps is not None else None
-
-    @property
-    def is_auto_mode(self) -> bool:
-        """True when Bay should be auto-started."""
-        return is_shipyard_neo_auto_endpoint(self._endpoint_url)
 
     async def boot(self, session_id: str) -> None:
         _ = session_id
