@@ -22,6 +22,6 @@
     "type": "string",
     "default": "default",
     "options": ["default", "true", "false"],
-    "hint": "是否启用自动启动功能。default 模式下，如果 endpoint 是是本机地址，插件会在启动时自动启动 Bay 服务；true 强制启用，false 强制禁用。"
+    "hint": "是否启用自动启动功能。default 模式下，如果 endpoint 是本机地址，插件会在启动时自动启动 Bay 服务；true 强制启用，false 强制禁用。"
   }
 }

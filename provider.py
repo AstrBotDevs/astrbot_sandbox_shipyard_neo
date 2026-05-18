@@ -119,10 +119,10 @@ class ShipyardNeoSandboxProvider:
         raw_autostart = merged.get("shipyard_neo_autostart")
         if raw_autostart is not None and not isinstance(raw_autostart, str):
             raise TypeError("shipyard_neo_autostart must be a string")
-        if raw_autostart == "default":
+        if raw_autostart is None or raw_autostart == "default":
             autostart = is_shipyard_neo_auto_endpoint(endpoint)
         else:
-            autostart = str(raw_autostart).lower() == "true"
+            autostart = raw_autostart.lower() == "true"
         raw_token = merged.get("shipyard_neo_access_token")
         if raw_token is not None and not isinstance(raw_token, str):
             raise TypeError("shipyard_neo_access_token must be a string")
