@@ -80,6 +80,20 @@ class ShipyardNeoSandboxProvider:
     def _persistent_name(config: dict, fallback: str) -> str:
         return str(config.get("persistent_name") or fallback).strip()
 
+    def _ensure_persistent_name(
+        self,
+        connect_info: dict,
+        *,
+        sandbox_id: str | None,
+        sandbox_name: str,
+    ) -> None:
+        if "persistent_name" in connect_info:
+            return
+        connect_info["persistent_name"] = self._persistent_name(
+            connect_info,
+            str(sandbox_id or sandbox_name),
+        )
+
     def _merged_sandbox_config(self, context: Context, session_id: str) -> dict:
         """Return sandbox config with plugin_config as base and user settings overriding."""
         config = context.get_config(umo=session_id)
@@ -123,19 +137,43 @@ class ShipyardNeoSandboxProvider:
         }
 
     def build_connect_info(self, sandbox_name: str, config: dict) -> dict:
-        return {
+        connect_info = {
             "name": sandbox_name,
             "endpoint_url": config.get("endpoint_url"),
             "profile": config.get("profile"),
-            "persistent_name": self._persistent_name(config, sandbox_name),
             "sandbox_id": config.get("sandbox_id"),
         }
+        if config.get("persistent_name") is not None:
+            connect_info["persistent_name"] = config.get("persistent_name")
+        self._ensure_persistent_name(
+            connect_info,
+            sandbox_id=config.get("sandbox_id"),
+            sandbox_name=sandbox_name,
+        )
+        return connect_info
 
     def update_connect_info(self, record: dict, *, sandbox_name: str) -> dict:
         connect_info = dict(record.get("connect_info") or {})
         connect_info["name"] = sandbox_name
-        connect_info["persistent_name"] = self._persistent_name(
-            connect_info, sandbox_name
+        self._ensure_persistent_name(
+            connect_info,
+            sandbox_id=record.get("sandbox_id"),
+            sandbox_name=sandbox_name,
+        )
+        return connect_info
+
+    def update_connect_info_after_boot(self, record: dict, booter: ComputerBooter):
+        sandbox = getattr(booter, "sandbox", None)
+        sandbox_id = getattr(sandbox, "id", None)
+        if not sandbox_id:
+            return None
+        runtime_sandbox_id = str(sandbox_id).strip()
+        connect_info = dict(record.get("connect_info") or {})
+        connect_info["sandbox_id"] = runtime_sandbox_id
+        self._ensure_persistent_name(
+            connect_info,
+            sandbox_id=record.get("sandbox_id") or runtime_sandbox_id,
+            sandbox_name=str(connect_info.get("name") or ""),
         )
         return connect_info
 
