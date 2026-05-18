@@ -95,14 +95,14 @@ def test_shipyard_neo_provider_defaults_to_local_endpoint_when_unconfigured():
 
     assert config["endpoint_url"] == DEFAULT_SHIPYARD_NEO_ENDPOINT
     assert config["access_token"] == ""
-    assert config["is_auto_mode"] is True
+    assert config["is_auto_mode"] is None
 
 
 @pytest.mark.parametrize(
     ("raw_autostart", "endpoint", "expected"),
     [
-        ("default", DEFAULT_SHIPYARD_NEO_ENDPOINT, True),
-        ("default", "http://127.0.0.1:9000", False),
+        ("default", DEFAULT_SHIPYARD_NEO_ENDPOINT, None),
+        ("default", "http://127.0.0.1:9000", None),
         ("true", "http://127.0.0.1:9000", True),
         ("false", DEFAULT_SHIPYARD_NEO_ENDPOINT, False),
         (" TRUE ", "http://127.0.0.1:9000", True),
@@ -142,6 +142,130 @@ def test_shipyard_neo_provider_rejects_invalid_autostart_setting():
 
     with pytest.raises(ValueError, match="shipyard_neo_autostart"):
         provider.build_create_config(context, "dashboard")
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "is_auto_mode", "expected"),
+    [
+        (DEFAULT_SHIPYARD_NEO_ENDPOINT, None, True),
+        ("http://127.0.0.1:9000", None, False),
+        ("http://127.0.0.1:9000", True, True),
+        (DEFAULT_SHIPYARD_NEO_ENDPOINT, False, False),
+    ],
+)
+def test_shipyard_neo_booter_resolves_auto_start_mode(
+    endpoint,
+    is_auto_mode,
+    expected,
+):
+    assert (
+        shipyard_neo.should_auto_start_shipyard_neo(endpoint, is_auto_mode) is expected
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("endpoint", "expected"),
+    [
+        (DEFAULT_SHIPYARD_NEO_ENDPOINT, True),
+        ("http://127.0.0.1:9000", False),
+    ],
+)
+async def test_shipyard_neo_provider_preserves_autostart_auto_detect_when_omitted(
+    endpoint,
+    expected,
+    monkeypatch,
+):
+    monkeypatch.setattr(provider_module, "_discover_bay_credentials", lambda _: "token")
+    recorded = {}
+
+    class FakeBooter:
+        DEFAULT_PROFILE = shipyard_neo.ShipyardNeoBooter.DEFAULT_PROFILE
+
+        def __init__(self, **kwargs):
+            recorded.update(kwargs)
+
+        async def boot(self, session_id: str):
+            recorded["boot_session_id"] = session_id
+
+    monkeypatch.setattr(provider_module, "ShipyardNeoBooter", FakeBooter)
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": endpoint,
+                }
+            }
+        }
+    )
+
+    config = provider.build_create_config(context, "dashboard")
+    await provider.create_booter(context, "dashboard", "neo-1", config)
+
+    assert recorded["is_auto_mode"] is None
+    assert (
+        shipyard_neo.should_auto_start_shipyard_neo(
+            recorded["endpoint_url"],
+            recorded["is_auto_mode"],
+        )
+        is expected
+    )
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_provider_autostart_false_disables_default_endpoint_autostart(
+    monkeypatch,
+):
+    recorded = {}
+
+    class FakeBayManager:
+        def __init__(self, **kwargs):
+            raise AssertionError("autostart=false must not launch Bay")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            recorded["client_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def list_profiles(self):
+            return SimpleNamespace(items=[])
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            del profile, ttl
+            return FakeReadySandbox("sbx_no_autostart")
+
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager.BayContainerManager",
+        FakeBayManager,
+    )
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        FakeClient,
+    )
+
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": DEFAULT_SHIPYARD_NEO_ENDPOINT,
+                    "shipyard_neo_access_token": "configured-token",
+                    "shipyard_neo_autostart": "false",
+                }
+            }
+        }
+    )
+    config = provider.build_create_config(context, "dashboard")
+
+    await provider.create_booter(context, "dashboard", "neo-1", config)
+
+    assert recorded["client_kwargs"] == {
+        "endpoint_url": DEFAULT_SHIPYARD_NEO_ENDPOINT,
+        "access_token": "configured-token",
+    }
 
 
 @pytest.mark.parametrize(

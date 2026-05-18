@@ -54,6 +54,15 @@ def _slice_content_by_lines(
     return "".join(selected)
 
 
+def should_auto_start_shipyard_neo(
+    endpoint_url: str,
+    is_auto_mode: bool | None,
+) -> bool:
+    if is_auto_mode is None:
+        return is_shipyard_neo_auto_endpoint(endpoint_url)
+    return is_auto_mode
+
+
 class NeoPythonComponent(PythonComponent):
     def __init__(self, sandbox: Sandbox) -> None:
         self._sandbox = sandbox
@@ -361,7 +370,7 @@ class ShipyardNeoBooter(ComputerBooter):
         access_token: str,
         profile: str = DEFAULT_PROFILE,
         ttl: int = 3600,
-        is_auto_mode: bool = False,
+        is_auto_mode: bool | None = None,
         *,
         persistent: bool = False,
         persistent_name: str | None = None,
@@ -391,6 +400,9 @@ class ShipyardNeoBooter(ComputerBooter):
     def bay_client(self) -> Any:
         return self._client
 
+    def _should_auto_start(self) -> bool:
+        return should_auto_start_shipyard_neo(self._endpoint_url, self.is_auto_mode)
+
     @property
     def sandbox(self) -> Any:
         return self._sandbox
@@ -410,7 +422,7 @@ class ShipyardNeoBooter(ComputerBooter):
         _ = session_id
 
         # --- Auto-start Bay if needed ---
-        if self.is_auto_mode or is_shipyard_neo_auto_endpoint(self._endpoint_url):
+        if self._should_auto_start():
             from .bay_manager import BayContainerManager
 
             # Clean up previous manager if re-booting

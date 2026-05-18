@@ -125,7 +125,7 @@ class ShipyardNeoSandboxProvider:
             else "default"
         )
         if autostart_setting == "default":
-            autostart = is_shipyard_neo_auto_endpoint(endpoint)
+            autostart = None
         else:
             if autostart_setting not in {"true", "false"}:
                 raise ValueError(
