@@ -15,6 +15,6 @@
     "description": "Shipyard Neo Profile",
     "type": "string",
     "default": "python-default",
-    "hint": "Shipyard Neo 沙箱 profile。保留默认值或留空时，Bay 会自动选择最合适的 profile；手动填写时请使用 Bay 返回的 profile id。"
+    "hint": "Shipyard Neo 沙箱 profile。保留默认值或留空时，Bay 会自动选择最合适的 profile；浏览器自动化需要 browser-python 或其他包含 gull/browser 容器的 profile。"
   }
 }

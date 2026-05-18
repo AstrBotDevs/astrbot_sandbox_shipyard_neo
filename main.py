@@ -10,7 +10,10 @@ from astrbot.core.computer.computer_client import (
 from astrbot.core.tools import registry as tool_registry
 
 from .provider import ShipyardNeoSandboxProvider
-from .tools.shipyard_neo import SHIPYARD_NEO_TOOL_MODULE_PREFIX
+from .tools.shipyard_neo import (
+    SHIPYARD_NEO_TOOL_MODULE_PREFIX,
+    build_shipyard_neo_tools,
+)
 
 
 @register(
@@ -26,6 +29,7 @@ class ShipyardNeoSandboxRuntimePlugin(Star):
         register_sandbox_provider(
             self.provider,
             replace=True,
+            tools=build_shipyard_neo_tools(),
         )
         tool_registry.register_builtin_tools_by_module_prefix(
             SHIPYARD_NEO_TOOL_MODULE_PREFIX

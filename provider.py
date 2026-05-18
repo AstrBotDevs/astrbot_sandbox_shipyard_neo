@@ -18,6 +18,7 @@ from .booters.shipyard_neo_endpoint import (
     is_shipyard_neo_auto_endpoint,
     normalize_shipyard_neo_endpoint,
 )
+from .tools.shipyard_neo import SHIPYARD_NEO_TOOL_NAMES
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
 _SHIPYARD_NEO_TTL_KEY = "sandbox_ttl"
@@ -62,22 +63,7 @@ class ShipyardNeoSandboxProvider:
     provider_id = "shipyard_neo"
     capabilities = {"shell", "python", "filesystem", "browser"}
     supports_persistent_reconnect = True
-    tool_names = {
-        "astrbot_execute_browser",
-        "astrbot_execute_browser_batch",
-        "astrbot_run_browser_skill",
-        "get_execution_history",
-        "annotate_execution",
-        "astrbot_create_skill_payload",
-        "astrbot_get_skill_payload",
-        "astrbot_create_skill_candidate",
-        "astrbot_list_skill_candidates",
-        "astrbot_evaluate_skill_candidate",
-        "astrbot_promote_skill_candidate",
-        "astrbot_list_skill_releases",
-        "astrbot_rollback_skill_release",
-        "astrbot_sync_skill_release",
-    }
+    tool_names = set(SHIPYARD_NEO_TOOL_NAMES)
 
     def __init__(
         self,

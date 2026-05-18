@@ -8,6 +8,7 @@ containers).
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import json
 import tarfile
@@ -24,11 +25,49 @@ from astrbot.api import logger
 
 BAY_IMAGE = "ghcr.io/astrbotdevs/shipyard-neo-bay:latest"
 DEFAULT_SHIP_RUNTIME_IMAGE = "ghcr.io/astrbotdevs/shipyard-neo-ship:latest"
+DEFAULT_GULL_RUNTIME_IMAGE = "ghcr.io/astrbotdevs/shipyard-neo-gull:latest"
+PYTHON_DEFAULT_PROFILE_ID = "python-default"
+BROWSER_PYTHON_PROFILE_ID = "browser-python"
 BAY_CONTAINER_NAME = "astrbot-bay"
 BAY_LABEL = "astrbot.bay.managed"
 BAY_PORT = 8114
 HEALTH_TIMEOUT_S = 60
 HEALTH_POLL_INTERVAL_S = 2
+DEFAULT_BAY_PROFILES = [
+    {
+        "id": PYTHON_DEFAULT_PROFILE_ID,
+        "image": DEFAULT_SHIP_RUNTIME_IMAGE,
+        "resources": {"cpus": 1.0, "memory": "1g"},
+        "capabilities": ["filesystem", "shell", "python"],
+        "idle_timeout": 1800,
+    },
+    {
+        "id": BROWSER_PYTHON_PROFILE_ID,
+        "description": "Browser automation with Python backend",
+        "containers": [
+            {
+                "name": "ship",
+                "image": DEFAULT_SHIP_RUNTIME_IMAGE,
+                "runtime_type": "ship",
+                "runtime_port": 8123,
+                "resources": {"cpus": 1.0, "memory": "1g"},
+                "capabilities": ["filesystem", "shell", "python"],
+                "primary_for": ["filesystem", "shell", "python"],
+                "env": {},
+            },
+            {
+                "name": "browser",
+                "image": DEFAULT_GULL_RUNTIME_IMAGE,
+                "runtime_type": "gull",
+                "runtime_port": 8115,
+                "resources": {"cpus": 1.0, "memory": "2g"},
+                "capabilities": ["browser"],
+                "env": {},
+            },
+        ],
+        "idle_timeout": 1800,
+    },
+]
 
 
 class BayContainerManager:
@@ -153,15 +192,7 @@ class BayContainerManager:
         return env
 
     def build_default_profiles(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "id": "python-default",
-                "image": DEFAULT_SHIP_RUNTIME_IMAGE,
-                "resources": {"cpus": 1.0, "memory": "1g"},
-                "capabilities": ["filesystem", "shell", "python"],
-                "idle_timeout": 1800,
-            }
-        ]
+        return copy.deepcopy(DEFAULT_BAY_PROFILES)
 
     def container_env_matches(self, container_info: dict[str, Any]) -> bool:
         existing = set(container_info.get("Config", {}).get("Env") or [])
