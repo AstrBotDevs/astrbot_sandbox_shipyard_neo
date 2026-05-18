@@ -95,6 +95,53 @@ def test_shipyard_neo_provider_defaults_to_local_endpoint_when_unconfigured():
 
     assert config["endpoint_url"] == DEFAULT_SHIPYARD_NEO_ENDPOINT
     assert config["access_token"] == ""
+    assert config["is_auto_mode"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw_autostart", "endpoint", "expected"),
+    [
+        ("default", DEFAULT_SHIPYARD_NEO_ENDPOINT, True),
+        ("default", "http://127.0.0.1:9000", False),
+        ("true", "http://127.0.0.1:9000", True),
+        ("false", DEFAULT_SHIPYARD_NEO_ENDPOINT, False),
+        (" TRUE ", "http://127.0.0.1:9000", True),
+    ],
+)
+def test_shipyard_neo_provider_resolves_autostart_setting(
+    raw_autostart,
+    endpoint,
+    expected,
+    monkeypatch,
+):
+    monkeypatch.setattr(provider_module, "_discover_bay_credentials", lambda _: "token")
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": endpoint,
+                    "shipyard_neo_autostart": raw_autostart,
+                }
+            }
+        }
+    )
+
+    config = provider.build_create_config(context, "dashboard")
+
+    assert config["is_auto_mode"] is expected
+
+
+def test_shipyard_neo_provider_rejects_invalid_autostart_setting():
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {"sandbox": {"shipyard_neo_autostart": "sometimes"}}
+        }
+    )
+
+    with pytest.raises(ValueError, match="shipyard_neo_autostart"):
+        provider.build_create_config(context, "dashboard")
 
 
 @pytest.mark.parametrize(

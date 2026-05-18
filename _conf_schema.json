@@ -1,20 +1,27 @@
 {
-  "shipyard_neo_endpoint": {
-    "description": "Shipyard Neo API 地址",
-    "type": "string",
-    "default": "http://127.0.0.1:8114",
-    "hint": "Bay / Shipyard Neo 服务的 API 地址。默认值会触发本机 Bay 自动启动；如果和 Bay 运行在同一个 Docker 网络中，也可以填写服务名。"
-  },
-  "shipyard_neo_access_token": {
-    "description": "Shipyard Neo 访问令牌",
-    "type": "string",
-    "default": "",
-    "hint": "Bay API Key。留空时，本机自动启动会生成新密钥；外部端点会尝试从 credentials.json 自动发现。"
-  },
-  "shipyard_neo_profile": {
-    "description": "Shipyard Neo Profile",
-    "type": "string",
-    "default": "python-default",
-    "hint": "Shipyard Neo 沙箱 profile。保留默认值或留空时，Bay 会自动选择最合适的 profile；浏览器自动化需要 browser-python 或其他包含 gull/browser 容器的 profile。"
-  }
+    "shipyard_neo_endpoint": {
+        "description": "Shipyard Neo API 地址",
+        "type": "string",
+        "default": "http://127.0.0.1:8114",
+        "hint": "Bay / Shipyard Neo 服务的 API 地址。如果和 Bay 运行在同一个 Docker 网络中，也可以填写服务名。"
+    },
+    "shipyard_neo_access_token": {
+        "description": "Shipyard Neo 访问令牌",
+        "type": "string",
+        "default": "",
+        "hint": "Bay API Key。留空时，本机自动启动会生成新密钥；外部端点会尝试从 credentials.json 自动发现。"
+    },
+    "shipyard_neo_profile": {
+        "description": "Shipyard Neo Profile",
+        "type": "string",
+        "default": "python-default",
+        "hint": "Shipyard Neo 沙箱 profile。保留默认值或留空时，Bay 会自动选择最合适的 profile；浏览器自动化需要 browser-python 或其他包含 gull/browser 容器的 profile。"
+    },
+    "shipyard_neo_autostart": {
+        "description": "自动启动 Shipyard Neo",
+        "type": "string",
+        "default": "default",
+        "options": ["default", "true", "false"],
+        "hint": "是否启用自动启动功能。default 模式下，如果 endpoint 是本机地址，插件会在启动时自动启动 Bay 服务；true 强制启用，false 强制禁用。"
+    }
 }
