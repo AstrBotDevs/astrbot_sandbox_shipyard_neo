@@ -95,14 +95,14 @@ def test_shipyard_neo_provider_defaults_to_local_endpoint_when_unconfigured():
 
     assert config["endpoint_url"] == DEFAULT_SHIPYARD_NEO_ENDPOINT
     assert config["access_token"] == ""
-    assert config["is_auto_mode"] is True
+    assert config["is_auto_mode"] is None
 
 
 @pytest.mark.parametrize(
     ("raw_autostart", "endpoint", "expected"),
     [
-        ("default", DEFAULT_SHIPYARD_NEO_ENDPOINT, True),
-        ("default", "http://127.0.0.1:9000", False),
+        ("default", DEFAULT_SHIPYARD_NEO_ENDPOINT, None),
+        ("default", "http://127.0.0.1:9000", None),
         ("true", "http://127.0.0.1:9000", True),
         ("false", DEFAULT_SHIPYARD_NEO_ENDPOINT, False),
         (" TRUE ", "http://127.0.0.1:9000", True),
@@ -164,6 +164,57 @@ def test_shipyard_neo_booter_resolves_auto_start_mode(
         is_auto_mode=is_auto_mode,
     )
 
+    assert booter._should_auto_start() is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("endpoint", "expected"),
+    [
+        (DEFAULT_SHIPYARD_NEO_ENDPOINT, True),
+        ("http://127.0.0.1:9000", False),
+    ],
+)
+async def test_shipyard_neo_provider_preserves_autostart_auto_detect_when_omitted(
+    endpoint,
+    expected,
+    monkeypatch,
+):
+    monkeypatch.setattr(provider_module, "_discover_bay_credentials", lambda _: "token")
+    recorded = {}
+
+    class FakeBooter:
+        DEFAULT_PROFILE = shipyard_neo.ShipyardNeoBooter.DEFAULT_PROFILE
+
+        def __init__(self, **kwargs):
+            recorded.update(kwargs)
+            self._endpoint_url = kwargs["endpoint_url"]
+            self._is_auto_mode = kwargs["is_auto_mode"]
+
+        def _should_auto_start(self):
+            if self._is_auto_mode is None:
+                return is_shipyard_neo_auto_endpoint(self._endpoint_url)
+            return self._is_auto_mode
+
+        async def boot(self, session_id: str):
+            recorded["boot_session_id"] = session_id
+
+    monkeypatch.setattr(provider_module, "ShipyardNeoBooter", FakeBooter)
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": endpoint,
+                }
+            }
+        }
+    )
+
+    config = provider.build_create_config(context, "dashboard")
+    booter = await provider.create_booter(context, "dashboard", "neo-1", config)
+
+    assert recorded["is_auto_mode"] is None
     assert booter._should_auto_start() is expected
 
 

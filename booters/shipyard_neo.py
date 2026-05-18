@@ -5,7 +5,6 @@ import os
 import secrets
 import shlex
 import sys
-from enum import Enum
 from typing import Any, cast
 
 from astrbot.api import logger
@@ -53,18 +52,6 @@ def _slice_content_by_lines(
     start = 0 if offset is None else offset
     selected = lines[start:] if limit is None else lines[start : start + limit]
     return "".join(selected)
-
-
-class AutoStartMode(Enum):
-    AUTO_DETECT = "auto_detect"
-    ENABLED = "enabled"
-    DISABLED = "disabled"
-
-
-def _resolve_auto_start_mode(is_auto_mode: bool | None) -> AutoStartMode:
-    if is_auto_mode is None:
-        return AutoStartMode.AUTO_DETECT
-    return AutoStartMode.ENABLED if is_auto_mode else AutoStartMode.DISABLED
 
 
 class NeoPythonComponent(PythonComponent):
@@ -386,7 +373,7 @@ class ShipyardNeoBooter(ComputerBooter):
         self._access_token = access_token
         self._profile = profile
         self._ttl = ttl
-        self._auto_start_mode = _resolve_auto_start_mode(is_auto_mode)
+        self._is_auto_mode = is_auto_mode
         self._persistent = persistent
         self._persistent_name = persistent_name
         self._resume = resume
@@ -405,9 +392,9 @@ class ShipyardNeoBooter(ComputerBooter):
         return self._client
 
     def _should_auto_start(self) -> bool:
-        if self._auto_start_mode == AutoStartMode.AUTO_DETECT:
+        if self._is_auto_mode is None:
             return is_shipyard_neo_auto_endpoint(self._endpoint_url)
-        return self._auto_start_mode == AutoStartMode.ENABLED
+        return self._is_auto_mode
 
     @property
     def sandbox(self) -> Any:
