@@ -58,6 +58,19 @@ def test_shipyard_neo_provider_connect_info_tracks_sandbox_id():
     assert info["sandbox_id"] == "sbx_123"
 
 
+def test_shipyard_neo_provider_connect_info_uses_astrbot_sandbox_id_for_persistent_name():
+    provider = provider_module.ShipyardNeoSandboxProvider()
+
+    info = provider.build_connect_info(
+        "display-name",
+        {"sandbox_id": "neo-runtime-1"},
+    )
+
+    assert info["name"] == "display-name"
+    assert info["persistent_name"] == "neo-runtime-1"
+    assert info["sandbox_id"] == "neo-runtime-1"
+
+
 def test_shipyard_neo_provider_tool_names_derive_from_registered_tool_classes():
     from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
         SHIPYARD_NEO_TOOL_CLASSES,
@@ -504,7 +517,9 @@ async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_confl
 
 
 @pytest.mark.asyncio
-async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkeypatch):
+async def test_shipyard_neo_booter_resume_does_not_create_when_sandbox_missing(
+    monkeypatch,
+):
     from shipyard_neo.errors import NotFoundError
 
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
@@ -521,8 +536,7 @@ async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkey
             raise NotFoundError()
 
         async def create_sandbox(self, *, profile: str, ttl: int):
-            recorded.append(("create", profile, ttl))
-            return FakeReadySandbox("new_sbx", profile, capabilities=["browser"])
+            raise AssertionError("resume path must not create a new sandbox")
 
     monkeypatch.setattr(
         "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
@@ -542,9 +556,10 @@ async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkey
         sandbox_id="neo-1",
     )
 
-    await booter.boot("ignored")
+    with pytest.raises(RuntimeError, match="could not be resumed"):
+        await booter.boot("ignored")
 
-    assert recorded == [("create", "python-default", 3600)]
+    assert recorded == []
 
 
 @pytest.mark.asyncio

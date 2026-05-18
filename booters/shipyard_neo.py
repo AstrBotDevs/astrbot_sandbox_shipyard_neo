@@ -456,20 +456,14 @@ class ShipyardNeoBooter(ComputerBooter):
                     )
                     resolved_profile = self._sandbox.profile
                 except (NotFoundError, SandboxExpiredError) as exc:
-                    logger.info(
-                        "[Computer] Shipyard Neo resume target unavailable; creating a new sandbox instead: sandbox_id=%s error=%s",
-                        self._existing_sandbox_id,
-                        exc,
-                    )
-                    resolved_profile = await self._resolve_profile(self._client)
-                    self._sandbox = await self._client.create_sandbox(
-                        profile=resolved_profile,
-                        ttl=self._ttl,
-                    )
+                    raise RuntimeError(
+                        "Shipyard Neo persistent sandbox "
+                        f"{self._existing_sandbox_id!r} could not be resumed"
+                    ) from exc
             else:
                 if self._resume and not self._existing_sandbox_id:
-                    logger.info(
-                        "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
+                    raise RuntimeError(
+                        "Shipyard Neo persistent sandbox restore requires an existing sandbox id"
                     )
                 # Resolve profile: user-specified > smart selection > default
                 resolved_profile = await self._resolve_profile(self._client)

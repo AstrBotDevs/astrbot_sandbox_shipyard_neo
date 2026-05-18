@@ -127,7 +127,10 @@ class ShipyardNeoSandboxProvider:
             "name": sandbox_name,
             "endpoint_url": config.get("endpoint_url"),
             "profile": config.get("profile"),
-            "persistent_name": self._persistent_name(config, sandbox_name),
+            "persistent_name": self._persistent_name(
+                config,
+                str(config.get("sandbox_id") or sandbox_name),
+            ),
             "sandbox_id": config.get("sandbox_id"),
         }
 
