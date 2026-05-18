@@ -361,7 +361,7 @@ class ShipyardNeoBooter(ComputerBooter):
         access_token: str,
         profile: str = DEFAULT_PROFILE,
         ttl: int = 3600,
-        is_auto_mode: bool = False,
+        is_auto_mode: bool | None = None,
         *,
         persistent: bool = False,
         persistent_name: str | None = None,
@@ -410,7 +410,12 @@ class ShipyardNeoBooter(ComputerBooter):
         _ = session_id
 
         # --- Auto-start Bay if needed ---
-        if self.is_auto_mode or is_shipyard_neo_auto_endpoint(self._endpoint_url):
+        should_auto_start = (
+            is_shipyard_neo_auto_endpoint(self._endpoint_url)
+            if self.is_auto_mode is None
+            else self.is_auto_mode
+        )
+        if should_auto_start:
             from .bay_manager import BayContainerManager
 
             # Clean up previous manager if re-booting

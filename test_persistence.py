@@ -144,6 +144,61 @@ def test_shipyard_neo_provider_rejects_invalid_autostart_setting():
         provider.build_create_config(context, "dashboard")
 
 
+@pytest.mark.asyncio
+async def test_shipyard_neo_provider_autostart_false_disables_default_endpoint_autostart(
+    monkeypatch,
+):
+    recorded = {}
+
+    class FakeBayManager:
+        def __init__(self, **kwargs):
+            raise AssertionError("autostart=false must not launch Bay")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            recorded["client_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def list_profiles(self):
+            return SimpleNamespace(items=[])
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            del profile, ttl
+            return FakeReadySandbox("sbx_no_autostart")
+
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager.BayContainerManager",
+        FakeBayManager,
+    )
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        FakeClient,
+    )
+
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": DEFAULT_SHIPYARD_NEO_ENDPOINT,
+                    "shipyard_neo_access_token": "configured-token",
+                    "shipyard_neo_autostart": "false",
+                }
+            }
+        }
+    )
+    config = provider.build_create_config(context, "dashboard")
+
+    await provider.create_booter(context, "dashboard", "neo-1", config)
+
+    assert recorded["client_kwargs"] == {
+        "endpoint_url": DEFAULT_SHIPYARD_NEO_ENDPOINT,
+        "access_token": "configured-token",
+    }
+
+
 @pytest.mark.parametrize(
     "endpoint_value, expected_endpoint, expected_auto",
     [
