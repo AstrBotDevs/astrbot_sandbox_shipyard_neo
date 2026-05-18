@@ -18,6 +18,7 @@ from .booters.shipyard_neo_endpoint import (
     is_shipyard_neo_auto_endpoint,
     normalize_shipyard_neo_endpoint,
 )
+from .tools.shipyard_neo import SHIPYARD_NEO_TOOL_NAMES
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
 _SHIPYARD_NEO_TTL_KEY = "sandbox_ttl"
@@ -62,22 +63,7 @@ class ShipyardNeoSandboxProvider:
     provider_id = "shipyard_neo"
     capabilities = {"shell", "python", "filesystem", "browser"}
     supports_persistent_reconnect = True
-    tool_names = {
-        "astrbot_execute_browser",
-        "astrbot_execute_browser_batch",
-        "astrbot_run_browser_skill",
-        "get_execution_history",
-        "annotate_execution",
-        "astrbot_create_skill_payload",
-        "astrbot_get_skill_payload",
-        "astrbot_create_skill_candidate",
-        "astrbot_list_skill_candidates",
-        "astrbot_evaluate_skill_candidate",
-        "astrbot_promote_skill_candidate",
-        "astrbot_list_skill_releases",
-        "astrbot_rollback_skill_release",
-        "astrbot_sync_skill_release",
-    }
+    tool_names = set(SHIPYARD_NEO_TOOL_NAMES)
 
     def __init__(
         self,
@@ -93,6 +79,20 @@ class ShipyardNeoSandboxProvider:
     @staticmethod
     def _persistent_name(config: dict, fallback: str) -> str:
         return str(config.get("persistent_name") or fallback).strip()
+
+    def _ensure_persistent_name(
+        self,
+        connect_info: dict,
+        *,
+        sandbox_id: str | None,
+        sandbox_name: str,
+    ) -> None:
+        if "persistent_name" in connect_info:
+            return
+        connect_info["persistent_name"] = self._persistent_name(
+            connect_info,
+            str(sandbox_id or sandbox_name),
+        )
 
     def _merged_sandbox_config(self, context: Context, session_id: str) -> dict:
         """Return sandbox config with plugin_config as base and user settings overriding."""
@@ -119,10 +119,19 @@ class ShipyardNeoSandboxProvider:
         raw_autostart = merged.get("shipyard_neo_autostart")
         if raw_autostart is not None and not isinstance(raw_autostart, str):
             raise TypeError("shipyard_neo_autostart must be a string")
-        if raw_autostart is None or raw_autostart == "default":
+        autostart_setting = (
+            raw_autostart.strip().lower()
+            if isinstance(raw_autostart, str)
+            else "default"
+        )
+        if autostart_setting == "default":
             autostart = is_shipyard_neo_auto_endpoint(endpoint)
         else:
-            autostart = raw_autostart.lower() == "true"
+            if autostart_setting not in {"true", "false"}:
+                raise ValueError(
+                    "shipyard_neo_autostart must be one of: default, true, false"
+                )
+            autostart = autostart_setting == "true"
         raw_token = merged.get("shipyard_neo_access_token")
         if raw_token is not None and not isinstance(raw_token, str):
             raise TypeError("shipyard_neo_access_token must be a string")
@@ -145,19 +154,43 @@ class ShipyardNeoSandboxProvider:
         }
 
     def build_connect_info(self, sandbox_name: str, config: dict) -> dict:
-        return {
+        connect_info = {
             "name": sandbox_name,
             "endpoint_url": config.get("endpoint_url"),
             "profile": config.get("profile"),
-            "persistent_name": self._persistent_name(config, sandbox_name),
             "sandbox_id": config.get("sandbox_id"),
         }
+        if config.get("persistent_name") is not None:
+            connect_info["persistent_name"] = config.get("persistent_name")
+        self._ensure_persistent_name(
+            connect_info,
+            sandbox_id=config.get("sandbox_id"),
+            sandbox_name=sandbox_name,
+        )
+        return connect_info
 
     def update_connect_info(self, record: dict, *, sandbox_name: str) -> dict:
         connect_info = dict(record.get("connect_info") or {})
         connect_info["name"] = sandbox_name
-        connect_info["persistent_name"] = self._persistent_name(
-            connect_info, sandbox_name
+        self._ensure_persistent_name(
+            connect_info,
+            sandbox_id=record.get("sandbox_id"),
+            sandbox_name=sandbox_name,
+        )
+        return connect_info
+
+    def update_connect_info_after_boot(self, record: dict, booter: ComputerBooter):
+        sandbox = getattr(booter, "sandbox", None)
+        sandbox_id = getattr(sandbox, "id", None)
+        if not sandbox_id:
+            return None
+        runtime_sandbox_id = str(sandbox_id).strip()
+        connect_info = dict(record.get("connect_info") or {})
+        connect_info["sandbox_id"] = runtime_sandbox_id
+        self._ensure_persistent_name(
+            connect_info,
+            sandbox_id=record.get("sandbox_id") or runtime_sandbox_id,
+            sandbox_name=str(connect_info.get("name") or ""),
         )
         return connect_info
 

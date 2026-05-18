@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -57,6 +58,33 @@ def test_shipyard_neo_provider_connect_info_tracks_sandbox_id():
     assert info["sandbox_id"] == "sbx_123"
 
 
+def test_shipyard_neo_provider_connect_info_uses_astrbot_sandbox_id_for_persistent_name():
+    provider = provider_module.ShipyardNeoSandboxProvider()
+
+    info = provider.build_connect_info(
+        "display-name",
+        {"sandbox_id": "neo-runtime-1"},
+    )
+
+    assert info["name"] == "display-name"
+    assert info["persistent_name"] == "neo-runtime-1"
+    assert info["sandbox_id"] == "neo-runtime-1"
+
+
+def test_shipyard_neo_provider_tool_names_derive_from_registered_tool_classes():
+    from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
+        SHIPYARD_NEO_TOOL_CLASSES,
+        build_shipyard_neo_tools,
+    )
+
+    assert provider_module.ShipyardNeoSandboxProvider.tool_names == {
+        tool_cls.name for tool_cls in SHIPYARD_NEO_TOOL_CLASSES
+    }
+    assert provider_module.ShipyardNeoSandboxProvider.tool_names == {
+        tool.name for tool in build_shipyard_neo_tools()
+    }
+
+
 def test_shipyard_neo_provider_defaults_to_local_endpoint_when_unconfigured():
     provider = provider_module.ShipyardNeoSandboxProvider()
 
@@ -67,6 +95,53 @@ def test_shipyard_neo_provider_defaults_to_local_endpoint_when_unconfigured():
 
     assert config["endpoint_url"] == DEFAULT_SHIPYARD_NEO_ENDPOINT
     assert config["access_token"] == ""
+    assert config["is_auto_mode"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw_autostart", "endpoint", "expected"),
+    [
+        ("default", DEFAULT_SHIPYARD_NEO_ENDPOINT, True),
+        ("default", "http://127.0.0.1:9000", False),
+        ("true", "http://127.0.0.1:9000", True),
+        ("false", DEFAULT_SHIPYARD_NEO_ENDPOINT, False),
+        (" TRUE ", "http://127.0.0.1:9000", True),
+    ],
+)
+def test_shipyard_neo_provider_resolves_autostart_setting(
+    raw_autostart,
+    endpoint,
+    expected,
+    monkeypatch,
+):
+    monkeypatch.setattr(provider_module, "_discover_bay_credentials", lambda _: "token")
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {
+                "sandbox": {
+                    "shipyard_neo_endpoint": endpoint,
+                    "shipyard_neo_autostart": raw_autostart,
+                }
+            }
+        }
+    )
+
+    config = provider.build_create_config(context, "dashboard")
+
+    assert config["is_auto_mode"] is expected
+
+
+def test_shipyard_neo_provider_rejects_invalid_autostart_setting():
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    context = SimpleNamespace(
+        get_config=lambda umo: {
+            "provider_settings": {"sandbox": {"shipyard_neo_autostart": "sometimes"}}
+        }
+    )
+
+    with pytest.raises(ValueError, match="shipyard_neo_autostart"):
+        provider.build_create_config(context, "dashboard")
 
 
 @pytest.mark.parametrize(
@@ -386,16 +461,16 @@ async def test_shipyard_neo_terminate_logs_unregister_failure_without_masking_cl
     assert warning.exc_info
 
 
-def test_shipyard_neo_provider_update_connect_info_populates_legacy_persistent_name():
+def test_shipyard_neo_provider_update_connect_info_populates_legacy_persistent_name_from_sandbox_id():
     provider = provider_module.ShipyardNeoSandboxProvider()
 
     updated = provider.update_connect_info(
-        {"connect_info": {"name": "Legacy"}},
+        {"sandbox_id": "neo-runtime-1", "connect_info": {"name": "Legacy"}},
         sandbox_name="Renamed",
     )
 
     assert updated["name"] == "Renamed"
-    assert updated["persistent_name"] == "Renamed"
+    assert updated["persistent_name"] == "neo-runtime-1"
 
 
 def test_shipyard_neo_provider_update_connect_info_preserves_existing_persistent_name():
@@ -413,6 +488,26 @@ def test_shipyard_neo_provider_update_connect_info_preserves_existing_persistent
 
     assert updated["name"] == "Renamed"
     assert updated["persistent_name"] == "Original"
+
+
+def test_shipyard_neo_provider_updates_runtime_sandbox_id_after_boot():
+    provider = provider_module.ShipyardNeoSandboxProvider()
+    booter = SimpleNamespace(sandbox=SimpleNamespace(id="bay-sbx-1"))
+
+    updated = provider.update_connect_info_after_boot(
+        {
+            "sandbox_id": "shipyard_neo-1",
+            "connect_info": {
+                "name": "Neo",
+                "persistent_name": "shipyard_neo-1",
+                "sandbox_id": "shipyard_neo-1",
+            },
+        },
+        booter,
+    )
+
+    assert updated["sandbox_id"] == "bay-sbx-1"
+    assert updated["persistent_name"] == "shipyard_neo-1"
 
 
 @pytest.mark.asyncio
@@ -489,7 +584,9 @@ async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_confl
 
 
 @pytest.mark.asyncio
-async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkeypatch):
+async def test_shipyard_neo_booter_resume_does_not_create_when_sandbox_missing(
+    monkeypatch,
+):
     from shipyard_neo.errors import NotFoundError
 
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
@@ -506,8 +603,7 @@ async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkey
             raise NotFoundError()
 
         async def create_sandbox(self, *, profile: str, ttl: int):
-            recorded.append(("create", profile, ttl))
-            return FakeReadySandbox("new_sbx", profile, capabilities=["browser"])
+            raise AssertionError("resume path must not create a new sandbox")
 
     monkeypatch.setattr(
         "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
@@ -527,9 +623,10 @@ async def test_shipyard_neo_booter_resume_falls_back_when_sandbox_missing(monkey
         sandbox_id="neo-1",
     )
 
-    await booter.boot("ignored")
+    with pytest.raises(RuntimeError, match="could not be resumed"):
+        await booter.boot("ignored")
 
-    assert recorded == [("create", "python-default", 3600)]
+    assert recorded == []
 
 
 @pytest.mark.asyncio
@@ -924,7 +1021,11 @@ def test_bay_manager_includes_api_key_env_when_token_is_configured():
 
 def test_bay_manager_configures_pullable_default_profile_image():
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        BROWSER_PYTHON_PROFILE_ID,
+        DEFAULT_BAY_PROFILES,
+        DEFAULT_GULL_RUNTIME_IMAGE,
         DEFAULT_SHIP_RUNTIME_IMAGE,
+        PYTHON_DEFAULT_PROFILE_ID,
         BayContainerManager,
     )
 
@@ -934,11 +1035,107 @@ def test_bay_manager_configures_pullable_default_profile_image():
 
     profiles = json.loads(profiles_env.removeprefix("BAY_PROFILES="))
 
-    assert profiles[0]["id"] == "python-default"
-    assert profiles[0]["image"] == DEFAULT_SHIP_RUNTIME_IMAGE
-    assert profiles[0]["resources"] == {"cpus": 1.0, "memory": "1g"}
-    assert profiles[0]["capabilities"] == ["filesystem", "shell", "python"]
-    assert profiles[0]["idle_timeout"] == 1800
+    assert profiles == DEFAULT_BAY_PROFILES
+    assert profiles is not DEFAULT_BAY_PROFILES
+
+    python_profile = next(
+        item for item in profiles if item["id"] == PYTHON_DEFAULT_PROFILE_ID
+    )
+    browser_profile = next(
+        item for item in profiles if item["id"] == BROWSER_PYTHON_PROFILE_ID
+    )
+
+    assert python_profile["image"] == DEFAULT_SHIP_RUNTIME_IMAGE
+    assert python_profile["resources"] == {"cpus": 1.0, "memory": "1g"}
+    assert python_profile["capabilities"] == ["filesystem", "shell", "python"]
+    assert python_profile["idle_timeout"] == 1800
+
+    assert browser_profile["description"] == "Browser automation with Python backend"
+    assert browser_profile["idle_timeout"] == 1800
+    assert browser_profile["containers"] == [
+        {
+            "name": "ship",
+            "image": DEFAULT_SHIP_RUNTIME_IMAGE,
+            "runtime_type": "ship",
+            "runtime_port": 8123,
+            "resources": {"cpus": 1.0, "memory": "1g"},
+            "capabilities": ["filesystem", "shell", "python"],
+            "primary_for": ["filesystem", "shell", "python"],
+            "env": {},
+        },
+        {
+            "name": "browser",
+            "image": DEFAULT_GULL_RUNTIME_IMAGE,
+            "runtime_type": "gull",
+            "runtime_port": 8115,
+            "resources": {"cpus": 1.0, "memory": "2g"},
+            "capabilities": ["browser"],
+            "env": {},
+        },
+    ]
+    assert sorted(
+        capability
+        for container in browser_profile["containers"]
+        for capability in container["capabilities"]
+    ) == [
+        "browser",
+        "filesystem",
+        "python",
+        "shell",
+    ]
+
+
+def test_docs_reference_default_bay_profile_ids():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        BROWSER_PYTHON_PROFILE_ID,
+        PYTHON_DEFAULT_PROFILE_ID,
+    )
+
+    readme = Path("README.md").read_text(encoding="utf-8")
+    readme_cn = Path("README_cn.md").read_text(encoding="utf-8")
+    schema = Path("_conf_schema.json").read_text(encoding="utf-8")
+
+    for content in (readme, readme_cn, schema):
+        assert PYTHON_DEFAULT_PROFILE_ID in content
+        assert BROWSER_PYTHON_PROFILE_ID in content
+
+
+def test_shipyard_neo_browser_property_reports_missing_capability():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    booter = ShipyardNeoBooter(endpoint_url="https://example.com", access_token="token")
+    booter._sandbox = FakeReadySandbox(capabilities=["filesystem", "shell", "python"])
+
+    with pytest.raises(RuntimeError, match="does not include browser capability"):
+        booter.browser
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_resolve_profile_prefers_browser_python():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    class FakeClient:
+        async def list_profiles(self):
+            return SimpleNamespace(
+                items=[
+                    SimpleNamespace(
+                        id="python-default",
+                        capabilities=["filesystem", "shell", "python"],
+                    ),
+                    SimpleNamespace(
+                        id="browser-python",
+                        capabilities=["filesystem", "shell", "python", "browser"],
+                    ),
+                ]
+            )
+
+    booter = ShipyardNeoBooter(endpoint_url="https://example.com", access_token="token")
+
+    assert await booter._resolve_profile(FakeClient()) == "browser-python"
 
 
 def test_bay_manager_detects_mismatched_existing_container_env():

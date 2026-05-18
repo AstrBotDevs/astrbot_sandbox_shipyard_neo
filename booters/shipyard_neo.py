@@ -410,7 +410,7 @@ class ShipyardNeoBooter(ComputerBooter):
         _ = session_id
 
         # --- Auto-start Bay if needed ---
-        if self.is_auto_mode:
+        if self.is_auto_mode or is_shipyard_neo_auto_endpoint(self._endpoint_url):
             from .bay_manager import BayContainerManager
 
             # Clean up previous manager if re-booting
@@ -453,20 +453,14 @@ class ShipyardNeoBooter(ComputerBooter):
                     )
                     resolved_profile = self._sandbox.profile
                 except (NotFoundError, SandboxExpiredError) as exc:
-                    logger.info(
-                        "[Computer] Shipyard Neo resume target unavailable; creating a new sandbox instead: sandbox_id=%s error=%s",
-                        self._existing_sandbox_id,
-                        exc,
-                    )
-                    resolved_profile = await self._resolve_profile(self._client)
-                    self._sandbox = await self._client.create_sandbox(
-                        profile=resolved_profile,
-                        ttl=self._ttl,
-                    )
+                    raise RuntimeError(
+                        "Shipyard Neo persistent sandbox "
+                        f"{self._existing_sandbox_id!r} could not be resumed"
+                    ) from exc
             else:
                 if self._resume and not self._existing_sandbox_id:
-                    logger.info(
-                        "[Computer] Shipyard Neo resume requested without existing sandbox id; creating a new sandbox instead"
+                    raise RuntimeError(
+                        "Shipyard Neo persistent sandbox restore requires an existing sandbox id"
                     )
                 # Resolve profile: user-specified > smart selection > default
                 resolved_profile = await self._resolve_profile(self._client)
@@ -699,6 +693,12 @@ class ShipyardNeoBooter(ComputerBooter):
     @property
     def browser(self) -> BrowserComponent:
         if self._browser is None:
+            caps = self.capabilities
+            if caps is not None and "browser" not in caps:
+                raise RuntimeError(
+                    "Current Shipyard Neo sandbox does not include browser capability. "
+                    "Use a Bay profile whose capabilities include 'browser'."
+                )
             raise RuntimeError("ShipyardNeoBooter is not initialized.")
         return self._browser
 
