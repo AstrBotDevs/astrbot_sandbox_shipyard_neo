@@ -3,7 +3,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from data.plugins.astrbot_sandbox_shipyard_neo import main as plugin_main
 from data.plugins.astrbot_sandbox_shipyard_neo import provider as provider_module
 from data.plugins.astrbot_sandbox_shipyard_neo.booters import shipyard_neo
@@ -711,11 +710,10 @@ async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_confl
 async def test_shipyard_neo_booter_resume_does_not_create_when_sandbox_missing(
     monkeypatch,
 ):
-    from shipyard_neo.errors import NotFoundError
-
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
         ShipyardNeoBooter,
     )
+    from shipyard_neo.errors import NotFoundError
 
     recorded = []
 
@@ -1075,8 +1073,13 @@ def test_shipyard_neo_provider_strips_access_token_without_discovery(monkeypatch
 
 
 def _assert_core_bay_env(env: list[str]) -> None:
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        DEFAULT_BAY_NETWORK,
+    )
+
     assert "BAY_SECURITY__ALLOW_ANONYMOUS=false" in env
     assert "BAY_DATA_DIR=/app/data" in env
+    assert f"BAY_DRIVER__DOCKER__NETWORK={DEFAULT_BAY_NETWORK}" in env
     assert any(entry.startswith("BAY_SERVER__HOST=") for entry in env)
     assert any(entry.startswith("BAY_SERVER__PORT=") for entry in env)
 
@@ -1091,6 +1094,47 @@ def test_bay_manager_omits_empty_api_key_env():
 
     _assert_core_bay_env(env)
     assert all(not entry.startswith("BAY_SECURITY__API_KEY=") for entry in env)
+
+
+def test_bay_manager_uses_default_network_for_empty_env(monkeypatch):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        BAY_NETWORK_ENV,
+        DEFAULT_BAY_NETWORK,
+        BayContainerManager,
+    )
+
+    monkeypatch.setenv(BAY_NETWORK_ENV, "   ")
+
+    manager = BayContainerManager(access_token="")
+    env = manager.build_container_env()
+
+    assert f"BAY_DRIVER__DOCKER__NETWORK={DEFAULT_BAY_NETWORK}" in env
+    assert manager.container_env_matches(
+        {
+            "Config": {"Env": env},
+            "HostConfig": {"NetworkMode": DEFAULT_BAY_NETWORK},
+        }
+    )
+
+
+def test_bay_manager_docker_network_can_be_overridden_via_env(monkeypatch):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.bay_manager import (
+        BAY_NETWORK_ENV,
+        BayContainerManager,
+    )
+
+    monkeypatch.setenv(BAY_NETWORK_ENV, "custom-network")
+
+    manager = BayContainerManager(access_token="")
+    env = manager.build_container_env()
+
+    assert "BAY_DRIVER__DOCKER__NETWORK=custom-network" in env
+    assert manager.container_env_matches(
+        {
+            "Config": {"Env": env},
+            "HostConfig": {"NetworkMode": "custom-network"},
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -1281,7 +1325,10 @@ def test_bay_manager_accepts_matching_existing_container_env():
 
     assert (
         manager.container_env_matches(
-            {"Config": {"Env": manager.build_container_env()}}
+            {
+                "Config": {"Env": manager.build_container_env()},
+                "HostConfig": {"NetworkMode": "shipyard"},
+            }
         )
         is True
     )
@@ -1296,7 +1343,12 @@ def test_bay_manager_matches_without_access_token():
     env = manager.build_container_env()
 
     assert "BAY_SECURITY__API_KEY=" not in env
-    assert manager.container_env_matches({"Config": {"Env": env}}) is True
+    assert (
+        manager.container_env_matches(
+            {"Config": {"Env": env}, "HostConfig": {"NetworkMode": "shipyard"}}
+        )
+        is True
+    )
 
 
 def test_bay_manager_rejects_different_api_key():
@@ -1313,7 +1365,15 @@ def test_bay_manager_rejects_different_api_key():
     ]
     stale_env.append("BAY_SECURITY__API_KEY=old-token")
 
-    assert manager.container_env_matches({"Config": {"Env": stale_env}}) is False
+    assert (
+        manager.container_env_matches(
+            {
+                "Config": {"Env": stale_env},
+                "HostConfig": {"NetworkMode": "shipyard"},
+            }
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio

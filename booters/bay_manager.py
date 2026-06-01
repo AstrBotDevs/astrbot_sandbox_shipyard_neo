@@ -11,6 +11,7 @@ import asyncio
 import copy
 import io
 import json
+import os
 import tarfile
 from typing import Any
 
@@ -30,6 +31,8 @@ PYTHON_DEFAULT_PROFILE_ID = "python-default"
 BROWSER_PYTHON_PROFILE_ID = "browser-python"
 BAY_CONTAINER_NAME = "astrbot-bay"
 BAY_LABEL = "astrbot.bay.managed"
+DEFAULT_BAY_NETWORK = "shipyard"
+BAY_NETWORK_ENV = "ASTRBOT_SHIPYARD_NEO_NETWORK"
 BAY_PORT = 8114
 HEALTH_TIMEOUT_S = 60
 HEALTH_POLL_INTERVAL_S = 2
@@ -78,10 +81,17 @@ class BayContainerManager:
         image: str = BAY_IMAGE,
         host_port: int = BAY_PORT,
         access_token: str = "",
+        docker_network: str | None = None,
     ) -> None:
         self._image = image
         self._host_port = host_port
         self._access_token = access_token
+        network = (
+            docker_network if docker_network is not None else os.getenv(BAY_NETWORK_ENV)
+        )
+        self._docker_network = (
+            network.strip() if network and network.strip() else DEFAULT_BAY_NETWORK
+        )
         self._docker: aiodocker.Docker | None = None
         self._container: Any = None
 
@@ -105,7 +115,10 @@ class BayContainerManager:
                 "an explicit Bay endpoint instead of auto-start mode."
             ) from exc
 
-        # 1. Look for an existing managed container
+        # 1. Ensure Bay and runtime containers share a reachable Docker network.
+        await self._ensure_docker_network()
+
+        # 2. Look for an existing managed container
         existing = await self._find_managed_container()
         if existing is not None:
             if not self.container_env_matches(existing):
@@ -146,14 +159,15 @@ class BayContainerManager:
                 self._container = container
                 return f"http://127.0.0.1:{self._host_port}"
 
-        # 2. Pull image if needed
+        # 3. Pull image if needed
         await self._pull_image_if_needed()
 
-        # 3. Create and start container
+        # 4. Create and start container
         logger.info(
-            "[BayManager] Starting Bay container: image=%s, port=%d",
+            "[BayManager] Starting Bay container: image=%s, port=%d, network=%s",
             self._image,
             self._host_port,
+            self._docker_network,
         )
         config = {
             "Image": self._image,
@@ -163,6 +177,7 @@ class BayContainerManager:
                 "PortBindings": {
                     f"{BAY_PORT}/tcp": [{"HostPort": str(self._host_port)}],
                 },
+                "NetworkMode": self._docker_network,
                 "Binds": [
                     # Bay needs Docker socket to create sandbox containers
                     "/var/run/docker.sock:/var/run/docker.sock",
@@ -184,6 +199,7 @@ class BayContainerManager:
             f"BAY_SERVER__PORT={BAY_PORT}",
             "BAY_DATA_DIR=/app/data",
             f"BAY_PROFILES={json.dumps(self.build_default_profiles())}",
+            f"BAY_DRIVER__DOCKER__NETWORK={self._docker_network}",
             # allow_anonymous=false lets Bay auto-provision when no key is supplied.
             "BAY_SECURITY__ALLOW_ANONYMOUS=false",
         ]
@@ -197,7 +213,10 @@ class BayContainerManager:
     def container_env_matches(self, container_info: dict[str, Any]) -> bool:
         existing = set(container_info.get("Config", {}).get("Env") or [])
         desired = set(self.build_container_env())
-        return desired.issubset(existing)
+        if not desired.issubset(existing):
+            return False
+        host_config = container_info.get("HostConfig") or {}
+        return host_config.get("NetworkMode") == self._docker_network
 
     async def wait_healthy(self, timeout: int = HEALTH_TIMEOUT_S) -> None:
         """Block until Bay's ``/health`` endpoint returns 200."""
@@ -326,6 +345,51 @@ class BayContainerManager:
             # Inspect first match to get full state
             return await containers[0].show()
         return None
+
+    async def _ensure_docker_network(self) -> None:
+        assert self._docker is not None
+        try:
+            networks = await self._docker.networks.list(
+                filters={"name": [self._docker_network]}
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to list Docker networks before starting Bay: {exc}"
+            ) from exc
+
+        for network in networks:
+            if self._network_name(network) == self._docker_network:
+                return
+
+        try:
+            await self._docker.networks.create(
+                {"Name": self._docker_network, "Driver": "bridge"}
+            )
+        except aiodocker.exceptions.DockerError as exc:
+            if exc.status == 409:
+                return
+            raise RuntimeError(
+                f"Failed to create Docker network {self._docker_network!r} before "
+                f"starting Bay: {exc}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to create Docker network {self._docker_network!r} before "
+                f"starting Bay: {exc}"
+            ) from exc
+        logger.info("[BayManager] Created Docker network: %s", self._docker_network)
+
+    @staticmethod
+    def _network_name(network: Any) -> str | None:
+        if isinstance(network, dict):
+            return network.get("Name")
+        attrs = getattr(network, "attrs", None)
+        if isinstance(attrs, dict):
+            return attrs.get("Name")
+        try:
+            return network["Name"]
+        except Exception:
+            return None
 
     async def _pull_image_if_needed(self) -> None:
         """Pull the Bay image if it doesn't exist locally."""
