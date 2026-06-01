@@ -44,7 +44,7 @@ git clone https://github.com/zouyonghe/astrbot_sandbox_shipyard_neo.git data/plu
 | --- | --- |
 | `shipyard_neo_endpoint` | Bay / Shipyard Neo API 地址，默认值为 `http://127.0.0.1:8114`。如果 AstrBot 和 Bay 跑在同一个 Docker 网络里，也可以填 Bay 的服务名。 |
 | `shipyard_neo_access_token` | Bay API Key。留空时，本机自动启动会生成新密钥；外部端点会尝试自动发现。 |
-| `shipyard_neo_profile` | 沙盒 profile。保留默认值 `python-default`，或者留空时，Bay 会自动选择最合适的 profile。浏览器自动化需要 Bay 选择 `browser-python` 这类带浏览器能力的 profile。 |
+| `shipyard_neo_profile` | 沙盒 profile。填写 `python-default` 时只启动基础 Python/Shell 沙箱；留空时，Bay 会自动选择最合适的 profile。浏览器自动化需要使用 `browser-python` 这类带浏览器能力的 profile。 |
 | `shipyard_neo_ttl` | 沙盒 TTL，单位秒。 |
 
 ## 浏览器 Profile 拓扑
@@ -56,7 +56,7 @@ git clone https://github.com/zouyonghe/astrbot_sandbox_shipyard_neo.git data/plu
 | `python-default` | `primary` (`ship`) | `filesystem`、`shell`、`python` |
 | `browser-python` | `ship` (`ship`) + `browser` (`gull`) | `filesystem`、`shell`、`python`、`browser` |
 
-当 `shipyard_neo_profile` 保持 `python-default` 或留空时，插件会向 Bay 查询可用 profiles，并优先选择包含 `browser` 能力的 profile。不要通过 `astrbot_execute_shell` 运行浏览器命令；请使用 `astrbot_execute_browser` 或 `astrbot_execute_browser_batch`，并且传入的命令不要带 `agent-browser` 前缀。
+当 `shipyard_neo_profile` 留空时，插件会向 Bay 查询可用 profiles，并优先选择包含 `browser` 能力的 profile。当它设置为 `python-default` 时，插件会直接使用该 profile。不要通过 `astrbot_execute_shell` 运行浏览器命令；请使用 `astrbot_execute_browser` 或 `astrbot_execute_browser_batch`，并且传入的命令不要带 `agent-browser` 前缀。
 
 如果 AstrBot 和 Bay 运行在同一个 Docker Compose 网络中，请把 `shipyard_neo_endpoint` 配成 Bay 服务名，并确保 AstrBot 能访问对应网络。
 
@@ -84,4 +84,4 @@ git clone https://github.com/zouyonghe/astrbot_sandbox_shipyard_neo.git data/plu
 ## 排查建议
 
 - 如果本机自动启动后没有可用端点，请确认 Docker 可用，并且默认地址还是 `http://127.0.0.1:8114`。
-- 如果你不确定该填哪个 profile，直接保留 `python-default`，让 Bay 自动选择即可。浏览器工作流应使用 `browser-python`，或其他包含提供 `browser` 能力的 `gull` 容器的 profile。
+- 如果你不确定该填哪个 profile，可以留空让 Bay 自动选择。浏览器工作流应使用 `browser-python`，或其他包含提供 `browser` 能力的 `gull` 容器的 profile。

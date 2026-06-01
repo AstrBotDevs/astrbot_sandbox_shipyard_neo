@@ -15,7 +15,7 @@
         "description": "Shipyard Neo Profile",
         "type": "string",
         "default": "python-default",
-        "hint": "Shipyard Neo 沙箱 profile。保留默认值或留空时，Bay 会自动选择最合适的 profile；浏览器自动化需要 browser-python 或其他包含 gull/browser 容器的 profile。"
+        "hint": "Shipyard Neo 沙箱 profile。填写 python-default 时只启动基础 Python/Shell 沙箱；留空时，Bay 会自动选择最合适的 profile。浏览器自动化需要 browser-python 或其他包含 gull/browser 容器的 profile。"
     },
     "shipyard_neo_autostart": {
         "description": "自动启动 Shipyard Neo",

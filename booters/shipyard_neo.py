@@ -478,7 +478,7 @@ class ShipyardNeoBooter(ComputerBooter):
                 resolved_profile = await self._resolve_profile(self._client)
                 self._sandbox = await self._client.create_sandbox(
                     profile=resolved_profile,
-                    ttl=self._ttl,
+                    ttl=0 if self._persistent else self._ttl,
                 )
 
             # --- Readiness gate: wait until sandbox session is READY ---
@@ -603,9 +603,9 @@ class ShipyardNeoBooter(ComputerBooter):
         misconfigured token, and silently falling back would just delay the
         real failure to ``create_sandbox``.
         """
-        # User explicitly set a profile → honour it
-        if self._profile and self._profile != self.DEFAULT_PROFILE:
-            logger.info("[Computer] Using user-specified profile: %s", self._profile)
+        # Any non-empty configured profile is explicit. Only an empty profile means auto-select.
+        if self._profile:
+            logger.info("[Computer] Using configured profile: %s", self._profile)
             return self._profile
 
         # Query Bay for available profiles
