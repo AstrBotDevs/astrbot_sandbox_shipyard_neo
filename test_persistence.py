@@ -1077,6 +1077,7 @@ def test_shipyard_neo_provider_strips_access_token_without_discovery(monkeypatch
 def _assert_core_bay_env(env: list[str]) -> None:
     assert "BAY_SECURITY__ALLOW_ANONYMOUS=false" in env
     assert "BAY_DATA_DIR=/app/data" in env
+    assert "BAY_DOCKER__NETWORK=astrbot-bay" in env
     assert any(entry.startswith("BAY_SERVER__HOST=") for entry in env)
     assert any(entry.startswith("BAY_SERVER__PORT=") for entry in env)
 
@@ -1281,7 +1282,10 @@ def test_bay_manager_accepts_matching_existing_container_env():
 
     assert (
         manager.container_env_matches(
-            {"Config": {"Env": manager.build_container_env()}}
+            {
+                "Config": {"Env": manager.build_container_env()},
+                "HostConfig": {"NetworkMode": "astrbot-bay"},
+            }
         )
         is True
     )
@@ -1296,7 +1300,12 @@ def test_bay_manager_matches_without_access_token():
     env = manager.build_container_env()
 
     assert "BAY_SECURITY__API_KEY=" not in env
-    assert manager.container_env_matches({"Config": {"Env": env}}) is True
+    assert (
+        manager.container_env_matches(
+            {"Config": {"Env": env}, "HostConfig": {"NetworkMode": "astrbot-bay"}}
+        )
+        is True
+    )
 
 
 def test_bay_manager_rejects_different_api_key():
@@ -1313,7 +1322,15 @@ def test_bay_manager_rejects_different_api_key():
     ]
     stale_env.append("BAY_SECURITY__API_KEY=old-token")
 
-    assert manager.container_env_matches({"Config": {"Env": stale_env}}) is False
+    assert (
+        manager.container_env_matches(
+            {
+                "Config": {"Env": stale_env},
+                "HostConfig": {"NetworkMode": "astrbot-bay"},
+            }
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
