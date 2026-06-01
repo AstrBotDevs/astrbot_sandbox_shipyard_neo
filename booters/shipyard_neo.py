@@ -527,6 +527,7 @@ class ShipyardNeoBooter(ComputerBooter):
 
         sandbox_id = sandbox.id
         deadline = asyncio.get_running_loop().time() + READINESS_TIMEOUT
+        last_logged_status: str | None = None
 
         while True:
             await sandbox.refresh()
@@ -580,11 +581,13 @@ class ShipyardNeoBooter(ComputerBooter):
                     f"{READINESS_TIMEOUT}s (last status: {status})"
                 )
 
-            logger.debug(
-                "[Computer] Sandbox %s status=%s, waiting...",
-                sandbox_id,
-                status,
-            )
+            if status != last_logged_status:
+                logger.debug(
+                    "[Computer] Sandbox %s status=%s, waiting for ready",
+                    sandbox_id,
+                    status,
+                )
+                last_logged_status = status
             await asyncio.sleep(POLL_INTERVAL)
 
     async def _resolve_profile(self, client: Any) -> str:
@@ -750,7 +753,7 @@ class ShipyardNeoBooter(ComputerBooter):
             await self._sandbox.refresh()
             status = getattr(self._sandbox.status, "value", str(self._sandbox.status))
             healthy = status not in {"failed", "expired"}
-            logger.info(
+            logger.debug(
                 "[Computer] Neo sandbox health check: id=%s, status=%s, healthy=%s",
                 getattr(self._sandbox, "id", "unknown"),
                 status,
