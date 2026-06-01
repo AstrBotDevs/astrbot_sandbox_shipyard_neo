@@ -670,6 +670,97 @@ async def test_shipyard_neo_provider_passes_reconnect_metadata(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_shipyard_neo_booter_creates_persistent_sandbox_without_expiry(
+    monkeypatch,
+):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    recorded = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            recorded["client_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            recorded["create_kwargs"] = {"profile": profile, "ttl": ttl}
+            return FakeReadySandbox("sbx_persistent")
+
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        FakeClient,
+    )
+
+    async def fake_resolve_profile(self, client):
+        return "browser-python"
+
+    monkeypatch.setattr(ShipyardNeoBooter, "_resolve_profile", fake_resolve_profile)
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+        ttl=3600,
+        persistent=True,
+        sandbox_id="neo-1",
+    )
+
+    await booter.boot("ignored")
+
+    assert recorded["create_kwargs"] == {"profile": "browser-python", "ttl": 0}
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_booter_preserves_ttl_for_non_persistent_sandbox(
+    monkeypatch,
+):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    recorded = {}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            recorded["create_kwargs"] = {"profile": profile, "ttl": ttl}
+            return FakeReadySandbox("sbx_temporary")
+
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    async def fake_resolve_profile(self, client):
+        return "python-default"
+
+    monkeypatch.setattr(ShipyardNeoBooter, "_resolve_profile", fake_resolve_profile)
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+        ttl=120,
+        persistent=False,
+        sandbox_id="neo-1",
+    )
+
+    await booter.boot("ignored")
+
+    assert recorded["create_kwargs"] == {"profile": "python-default", "ttl": 120}
+
+
+@pytest.mark.asyncio
 async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_conflicts(
     monkeypatch,
 ):
