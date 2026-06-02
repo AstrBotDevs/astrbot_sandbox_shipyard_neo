@@ -29,7 +29,7 @@ class ShipyardNeoSandboxRuntimePlugin(Star):
         register_sandbox_provider(
             self.provider,
             replace=True,
-            tools=build_shipyard_neo_tools(),
+            tools=build_shipyard_neo_tools(self.provider.configured_profile),
         )
         tool_registry.register_builtin_tools_by_module_prefix(
             SHIPYARD_NEO_TOOL_MODULE_PREFIX

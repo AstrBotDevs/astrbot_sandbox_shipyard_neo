@@ -18,12 +18,17 @@ from .booters.shipyard_neo_endpoint import (
     is_shipyard_neo_auto_endpoint,
     normalize_shipyard_neo_endpoint,
 )
-from .tools.shipyard_neo import SHIPYARD_NEO_TOOL_NAMES
+from .tools.shipyard_neo import (
+    normalize_shipyard_neo_profile,
+    should_enable_browser_tools,
+    tool_names_for_profile,
+)
 
 BootHook = Callable[[Context, str, str, dict], Awaitable[ComputerBooter]]
 _SHIPYARD_NEO_TTL_KEY = "sandbox_ttl"
 _SHIPYARD_NEO_TTL_ALIASES = ("shipyard_neo_ttl",)
 _SHIPYARD_NEO_DEFAULT_TTL_SECONDS = 3600
+_SHIPYARD_NEO_DEFAULT_PROFILE = "python-default"
 _SHIPYARD_NEO_IDLE_TIMEOUT_KEY = "sandbox_idle_timeout"
 _SHIPYARD_NEO_IDLE_TIMEOUT_ALIASES = ("shipyard_neo_idle_timeout",)
 _SHIPYARD_NEO_DEFAULT_IDLE_TIMEOUT_SECONDS = 0.0
@@ -61,9 +66,7 @@ def _discover_bay_credentials(endpoint: str) -> str:
 
 class ShipyardNeoSandboxProvider:
     provider_id = "shipyard_neo"
-    capabilities = {"shell", "python", "filesystem", "browser"}
     supports_persistent_reconnect = True
-    tool_names = set(SHIPYARD_NEO_TOOL_NAMES)
 
     def __init__(
         self,
@@ -75,6 +78,17 @@ class ShipyardNeoSandboxProvider:
             dict(plugin_config) if plugin_config is not None else {}
         )
         self._boot_hook = boot_hook
+        self.configured_profile = self._configured_profile(self.plugin_config)
+        self.capabilities = {"shell", "python", "filesystem"}
+        if should_enable_browser_tools(self.configured_profile):
+            self.capabilities.add("browser")
+        self.tool_names = set(tool_names_for_profile(self.configured_profile))
+
+    @staticmethod
+    def _configured_profile(config: Mapping[str, Any]) -> str:
+        if "shipyard_neo_profile" not in config:
+            return _SHIPYARD_NEO_DEFAULT_PROFILE
+        return normalize_shipyard_neo_profile(config.get("shipyard_neo_profile"))
 
     @staticmethod
     def _persistent_name(config: dict, fallback: str) -> str:
@@ -141,9 +155,7 @@ class ShipyardNeoSandboxProvider:
         return {
             "endpoint_url": endpoint,
             "access_token": token,
-            "profile": merged.get(
-                "shipyard_neo_profile", ShipyardNeoBooter.DEFAULT_PROFILE
-            ),
+            "profile": self._configured_profile(merged),
             "ttl": resolve_sandbox_timeout(
                 merged,
                 _SHIPYARD_NEO_TTL_KEY,

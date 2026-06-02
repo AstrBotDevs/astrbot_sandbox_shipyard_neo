@@ -43,6 +43,31 @@ class FakeIdleSandbox(FakeReadySandbox):
         self.status = SimpleNamespace(value="idle")
 
 
+class FakeFailedSandbox(FakeReadySandbox):
+    def __init__(self, sandbox_id: str = "sbx_failed"):
+        super().__init__(sandbox_id=sandbox_id)
+        self.status = SimpleNamespace(value="failed")
+        self.delete_calls = 0
+
+    async def delete(self):
+        self.delete_calls += 1
+
+
+def make_fake_bay_client(recorded: dict, sandbox_id: str):
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            recorded["create_kwargs"] = {"profile": profile, "ttl": ttl}
+            return FakeReadySandbox(sandbox_id)
+
+    return lambda **kwargs: FakeClient()
+
+
 def test_shipyard_neo_provider_connect_info_tracks_sandbox_id():
     provider = provider_module.ShipyardNeoSandboxProvider()
     assert (
@@ -78,16 +103,68 @@ def test_shipyard_neo_provider_connect_info_uses_astrbot_sandbox_id_for_persiste
 
 def test_shipyard_neo_provider_tool_names_derive_from_registered_tool_classes():
     from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
+        BROWSER_TOOL_NAMES,
         SHIPYARD_NEO_TOOL_CLASSES,
         build_shipyard_neo_tools,
+        tool_names_for_profile,
     )
 
-    assert provider_module.ShipyardNeoSandboxProvider.tool_names == {
-        tool_cls.name for tool_cls in SHIPYARD_NEO_TOOL_CLASSES
-    }
-    assert provider_module.ShipyardNeoSandboxProvider.tool_names == {
-        tool.name for tool in build_shipyard_neo_tools()
-    }
+    assert (
+        provider_module.ShipyardNeoSandboxProvider().tool_names
+        == {tool_cls.name for tool_cls in SHIPYARD_NEO_TOOL_CLASSES}
+        - BROWSER_TOOL_NAMES
+    )
+    assert {tool.name for tool in build_shipyard_neo_tools("python-default")} == (
+        tool_names_for_profile("python-default")
+    )
+    assert BROWSER_TOOL_NAMES.isdisjoint(tool_names_for_profile("python-default"))
+    assert BROWSER_TOOL_NAMES <= {tool.name for tool in build_shipyard_neo_tools()}
+
+
+def test_shipyard_neo_provider_enables_browser_tools_for_browser_profile():
+    from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
+        BROWSER_TOOL_NAMES,
+    )
+
+    provider = provider_module.ShipyardNeoSandboxProvider(
+        plugin_config={"shipyard_neo_profile": "browser-python"}
+    )
+
+    assert "browser" in provider.capabilities
+    assert BROWSER_TOOL_NAMES <= provider.tool_names
+
+
+def test_shipyard_neo_provider_excludes_browser_tools_for_python_default():
+    from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
+        BROWSER_TOOL_NAMES,
+    )
+
+    provider = provider_module.ShipyardNeoSandboxProvider(
+        plugin_config={"shipyard_neo_profile": "python-default"}
+    )
+
+    assert "browser" not in provider.capabilities
+    assert BROWSER_TOOL_NAMES.isdisjoint(provider.tool_names)
+
+
+def test_shipyard_neo_provider_normalizes_none_profile_consistently():
+    from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
+        BROWSER_TOOL_NAMES,
+    )
+
+    provider = provider_module.ShipyardNeoSandboxProvider(
+        plugin_config={"shipyard_neo_profile": None}
+    )
+    context = SimpleNamespace(
+        get_config=lambda umo: {"provider_settings": {"sandbox": {}}}
+    )
+
+    config = provider.build_create_config(context, "dashboard")
+
+    assert provider.configured_profile == ""
+    assert config["profile"] == ""
+    assert "browser" in provider.capabilities
+    assert BROWSER_TOOL_NAMES <= provider.tool_names
 
 
 def test_shipyard_neo_provider_defaults_to_local_endpoint_when_unconfigured():
@@ -676,6 +753,70 @@ async def test_shipyard_neo_provider_passes_reconnect_metadata(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_shipyard_neo_booter_creates_persistent_sandbox_without_expiry(
+    monkeypatch,
+):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    recorded = {}
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        make_fake_bay_client(recorded, "sbx_persistent"),
+    )
+
+    async def fake_resolve_profile(self, client):
+        return "browser-python"
+
+    monkeypatch.setattr(ShipyardNeoBooter, "_resolve_profile", fake_resolve_profile)
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+        ttl=3600,
+        persistent=True,
+        sandbox_id="neo-1",
+    )
+
+    await booter.boot("ignored")
+
+    assert recorded["create_kwargs"] == {"profile": "browser-python", "ttl": 0}
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_booter_preserves_ttl_for_non_persistent_sandbox(
+    monkeypatch,
+):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    recorded = {}
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        make_fake_bay_client(recorded, "sbx_temporary"),
+    )
+
+    async def fake_resolve_profile(self, client):
+        return "python-default"
+
+    monkeypatch.setattr(ShipyardNeoBooter, "_resolve_profile", fake_resolve_profile)
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+        ttl=120,
+        persistent=False,
+        sandbox_id="neo-1",
+    )
+
+    await booter.boot("ignored")
+
+    assert recorded["create_kwargs"] == {"profile": "python-default", "ttl": 120}
+
+
+@pytest.mark.asyncio
 async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_conflicts(
     monkeypatch,
 ):
@@ -790,6 +931,42 @@ async def test_shipyard_neo_booter_resume_accepts_idle_sandbox(monkeypatch):
 
     assert booter.sandbox_id == "neo-1"
     assert booter._sandbox.id == "idle_sbx"
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_resume_readiness_does_not_delete_existing_sandbox():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+    )
+    sandbox = FakeFailedSandbox("existing_sbx")
+
+    with pytest.raises(RuntimeError, match="terminal state"):
+        await booter._wait_until_ready(sandbox, allow_idle=True)
+
+    assert sandbox.delete_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_new_readiness_deletes_failed_sandbox():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+    )
+    sandbox = FakeFailedSandbox("new_sbx")
+
+    with pytest.raises(RuntimeError, match="terminal state"):
+        await booter._wait_until_ready(sandbox, allow_idle=False)
+
+    assert sandbox.delete_calls == 1
 
 
 @pytest.mark.asyncio
@@ -1322,7 +1499,22 @@ def test_shipyard_neo_browser_property_reports_missing_capability():
 
 
 @pytest.mark.asyncio
-async def test_shipyard_neo_resolve_profile_prefers_browser_python():
+async def test_shipyard_neo_resolve_profile_honors_python_default():
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    class FakeClient:
+        async def list_profiles(self):
+            raise AssertionError("configured python-default should not auto-select")
+
+    booter = ShipyardNeoBooter(endpoint_url="https://example.com", access_token="token")
+
+    assert await booter._resolve_profile(FakeClient()) == "python-default"
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_resolve_profile_auto_selects_browser_when_profile_empty():
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
         ShipyardNeoBooter,
     )
@@ -1342,7 +1534,9 @@ async def test_shipyard_neo_resolve_profile_prefers_browser_python():
                 ]
             )
 
-    booter = ShipyardNeoBooter(endpoint_url="https://example.com", access_token="token")
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com", access_token="token", profile=""
+    )
 
     assert await booter._resolve_profile(FakeClient()) == "browser-python"
 

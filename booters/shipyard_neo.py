@@ -478,7 +478,7 @@ class ShipyardNeoBooter(ComputerBooter):
                 resolved_profile = await self._resolve_profile(self._client)
                 self._sandbox = await self._client.create_sandbox(
                     profile=resolved_profile,
-                    ttl=self._ttl,
+                    ttl=0 if self._persistent else self._ttl,
                 )
 
             # --- Readiness gate: wait until sandbox session is READY ---
@@ -521,8 +521,11 @@ class ShipyardNeoBooter(ComputerBooter):
         """Poll sandbox status until READY, or raise on FAILED / timeout.
 
         Covers both warm-pool hits (near-instant) and cold starts (up to 180s).
-        On FAILED, EXPIRED, or timeout the sandbox is deleted before raising
-        so no orphan resources leak on Bay.
+        When allow_idle is true for persistent resume, IDLE is also acceptable
+        because Bay starts the session on the first command.
+        On FAILED, EXPIRED, or timeout, newly-created sandboxes are deleted
+        before raising so no orphan resources leak on Bay. Existing persistent
+        sandboxes being resumed are never deleted by this readiness gate.
         """
         READINESS_TIMEOUT = 180  # seconds
         POLL_INTERVAL = 2  # seconds
@@ -558,14 +561,15 @@ class ShipyardNeoBooter(ComputerBooter):
                     sandbox_id,
                     status,
                 )
-                try:
-                    await sandbox.delete()
-                except Exception as del_err:
-                    logger.warning(
-                        "[Computer] Failed to delete failed sandbox %s: %s",
-                        sandbox_id,
-                        del_err,
-                    )
+                if not allow_idle:
+                    try:
+                        await sandbox.delete()
+                    except Exception as del_err:
+                        logger.warning(
+                            "[Computer] Failed to delete failed sandbox %s: %s",
+                            sandbox_id,
+                            del_err,
+                        )
                 raise RuntimeError(
                     f"Sandbox {sandbox_id} is in terminal state: {status}"
                 )
@@ -579,14 +583,15 @@ class ShipyardNeoBooter(ComputerBooter):
                     READINESS_TIMEOUT,
                     status,
                 )
-                try:
-                    await sandbox.delete()
-                except Exception as del_err:
-                    logger.warning(
-                        "[Computer] Failed to delete timed-out sandbox %s: %s",
-                        sandbox_id,
-                        del_err,
-                    )
+                if not allow_idle:
+                    try:
+                        await sandbox.delete()
+                    except Exception as del_err:
+                        logger.warning(
+                            "[Computer] Failed to delete timed-out sandbox %s: %s",
+                            sandbox_id,
+                            del_err,
+                        )
                 raise TimeoutError(
                     f"Sandbox {sandbox_id} did not become ready within "
                     f"{READINESS_TIMEOUT}s (last status: {status})"
@@ -614,9 +619,9 @@ class ShipyardNeoBooter(ComputerBooter):
         misconfigured token, and silently falling back would just delay the
         real failure to ``create_sandbox``.
         """
-        # User explicitly set a profile → honour it
-        if self._profile and self._profile != self.DEFAULT_PROFILE:
-            logger.info("[Computer] Using user-specified profile: %s", self._profile)
+        # Any non-empty configured profile is explicit. Only an empty profile means auto-select.
+        if self._profile:
+            logger.info("[Computer] Using configured profile: %s", self._profile)
             return self._profile
 
         # Query Bay for available profiles
