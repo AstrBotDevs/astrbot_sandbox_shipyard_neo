@@ -482,7 +482,7 @@ class ShipyardNeoBooter(ComputerBooter):
                 )
 
             # --- Readiness gate: wait until sandbox session is READY ---
-            await self._wait_until_ready(self._sandbox)
+            await self._wait_until_ready(self._sandbox, allow_idle=self._resume)
 
             self._shell = NeoShellComponent(self._sandbox)
             self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
@@ -515,7 +515,9 @@ class ShipyardNeoBooter(ComputerBooter):
             self._sandbox = None
             raise
 
-    async def _wait_until_ready(self, sandbox: Sandbox) -> None:
+    async def _wait_until_ready(
+        self, sandbox: Sandbox, *, allow_idle: bool = False
+    ) -> None:
         """Poll sandbox status until READY, or raise on FAILED / timeout.
 
         Covers both warm-pool hits (near-instant) and cold starts (up to 180s).
@@ -536,6 +538,15 @@ class ShipyardNeoBooter(ComputerBooter):
             if status == "ready":
                 logger.info(
                     "[Computer] Sandbox %s is ready (profile=%s)",
+                    sandbox_id,
+                    sandbox.profile,
+                )
+                return
+
+            if allow_idle and status == "idle":
+                logger.info(
+                    "[Computer] Resumed idle sandbox %s (profile=%s); "
+                    "Bay will start a session on first command",
                     sandbox_id,
                     sandbox.profile,
                 )

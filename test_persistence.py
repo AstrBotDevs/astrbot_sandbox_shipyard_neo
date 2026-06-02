@@ -37,6 +37,12 @@ class FakeReadySandbox:
         return None
 
 
+class FakeIdleSandbox(FakeReadySandbox):
+    def __init__(self, sandbox_id: str = "sbx_idle"):
+        super().__init__(sandbox_id=sandbox_id)
+        self.status = SimpleNamespace(value="idle")
+
+
 def test_shipyard_neo_provider_connect_info_tracks_sandbox_id():
     provider = provider_module.ShipyardNeoSandboxProvider()
     assert (
@@ -749,6 +755,41 @@ async def test_shipyard_neo_booter_resume_does_not_create_when_sandbox_missing(
         await booter.boot("ignored")
 
     assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_shipyard_neo_booter_resume_accepts_idle_sandbox(monkeypatch):
+    from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
+        ShipyardNeoBooter,
+    )
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def get_sandbox(self, sandbox_id: str):
+            return FakeIdleSandbox(sandbox_id)
+
+        async def create_sandbox(self, *, profile: str, ttl: int):
+            raise AssertionError("resume path must not create a new sandbox")
+
+    monkeypatch.setattr(
+        "data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo.BayClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    booter = ShipyardNeoBooter(
+        endpoint_url="https://example.com",
+        access_token="token",
+        resume=True,
+        existing_sandbox_id="idle_sbx",
+        sandbox_id="neo-1",
+    )
+
+    await booter.boot("ignored")
+
+    assert booter.sandbox_id == "neo-1"
+    assert booter._sandbox.id == "idle_sbx"
 
 
 @pytest.mark.asyncio
