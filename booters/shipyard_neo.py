@@ -482,7 +482,11 @@ class ShipyardNeoBooter(ComputerBooter):
                 )
 
             # --- Readiness gate: wait until sandbox session is READY ---
-            await self._wait_until_ready(self._sandbox, allow_idle=self._resume)
+            await self._wait_until_ready(
+                self._sandbox,
+                allow_idle=self._resume,
+                delete_on_failure=not self._resume,
+            )
 
             self._shell = NeoShellComponent(self._sandbox)
             self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
@@ -516,16 +520,26 @@ class ShipyardNeoBooter(ComputerBooter):
             raise
 
     async def _wait_until_ready(
-        self, sandbox: Sandbox, *, allow_idle: bool = False
+        self,
+        sandbox: Sandbox,
+        *,
+        allow_idle: bool = False,
+        delete_on_failure: bool = True,
     ) -> None:
         """Poll sandbox status until READY, or raise on FAILED / timeout.
 
         Covers both warm-pool hits (near-instant) and cold starts (up to 180s).
-        When allow_idle is true for persistent resume, IDLE is also acceptable
-        because Bay starts the session on the first command.
-        On FAILED, EXPIRED, or timeout, newly-created sandboxes are deleted
-        before raising so no orphan resources leak on Bay. Existing persistent
-        sandboxes being resumed are never deleted by this readiness gate.
+
+        Readiness:
+        - When allow_idle is False, only READY is accepted.
+        - When allow_idle is True for persistent resume, IDLE is also accepted
+          because Bay starts the session on the first command.
+
+        Lifecycle ownership:
+        - When delete_on_failure is True, FAILED / EXPIRED / timeout deletes
+          the sandbox before raising so newly-created sandboxes do not leak.
+        - When delete_on_failure is False for existing persistent sandboxes,
+          this readiness gate never deletes the sandbox.
         """
         READINESS_TIMEOUT = 180  # seconds
         POLL_INTERVAL = 2  # seconds
@@ -561,7 +575,7 @@ class ShipyardNeoBooter(ComputerBooter):
                     sandbox_id,
                     status,
                 )
-                if not allow_idle:
+                if delete_on_failure:
                     try:
                         await sandbox.delete()
                     except Exception as del_err:
@@ -583,7 +597,7 @@ class ShipyardNeoBooter(ComputerBooter):
                     READINESS_TIMEOUT,
                     status,
                 )
-                if not allow_idle:
+                if delete_on_failure:
                     try:
                         await sandbox.delete()
                     except Exception as del_err:

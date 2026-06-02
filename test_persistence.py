@@ -908,6 +908,9 @@ async def test_shipyard_neo_booter_resume_accepts_idle_sandbox(monkeypatch):
         async def __aenter__(self):
             return self
 
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
         async def get_sandbox(self, sandbox_id: str):
             return FakeIdleSandbox(sandbox_id)
 
@@ -946,7 +949,9 @@ async def test_shipyard_neo_resume_readiness_does_not_delete_existing_sandbox():
     sandbox = FakeFailedSandbox("existing_sbx")
 
     with pytest.raises(RuntimeError, match="terminal state"):
-        await booter._wait_until_ready(sandbox, allow_idle=True)
+        await booter._wait_until_ready(
+            sandbox, allow_idle=True, delete_on_failure=False
+        )
 
     assert sandbox.delete_calls == 0
 
@@ -964,7 +969,9 @@ async def test_shipyard_neo_new_readiness_deletes_failed_sandbox():
     sandbox = FakeFailedSandbox("new_sbx")
 
     with pytest.raises(RuntimeError, match="terminal state"):
-        await booter._wait_until_ready(sandbox, allow_idle=False)
+        await booter._wait_until_ready(
+            sandbox, allow_idle=False, delete_on_failure=True
+        )
 
     assert sandbox.delete_calls == 1
 
