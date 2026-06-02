@@ -482,7 +482,11 @@ class ShipyardNeoBooter(ComputerBooter):
                 )
 
             # --- Readiness gate: wait until sandbox session is READY ---
-            await self._wait_until_ready(self._sandbox)
+            await self._wait_until_ready(
+                self._sandbox,
+                allow_idle=self._resume,
+                delete_on_failure=not self._resume,
+            )
 
             self._shell = NeoShellComponent(self._sandbox)
             self._fs = NeoFileSystemComponent(self._sandbox, self._shell)
@@ -515,12 +519,27 @@ class ShipyardNeoBooter(ComputerBooter):
             self._sandbox = None
             raise
 
-    async def _wait_until_ready(self, sandbox: Sandbox) -> None:
+    async def _wait_until_ready(
+        self,
+        sandbox: Sandbox,
+        *,
+        allow_idle: bool = False,
+        delete_on_failure: bool = True,
+    ) -> None:
         """Poll sandbox status until READY, or raise on FAILED / timeout.
 
         Covers both warm-pool hits (near-instant) and cold starts (up to 180s).
-        On FAILED, EXPIRED, or timeout the sandbox is deleted before raising
-        so no orphan resources leak on Bay.
+
+        Readiness:
+        - When allow_idle is False, only READY is accepted.
+        - When allow_idle is True for persistent resume, IDLE is also accepted
+          because Bay starts the session on the first command.
+
+        Lifecycle ownership:
+        - When delete_on_failure is True, FAILED / EXPIRED / timeout deletes
+          the sandbox before raising so newly-created sandboxes do not leak.
+        - When delete_on_failure is False for existing persistent sandboxes,
+          this readiness gate never deletes the sandbox.
         """
         READINESS_TIMEOUT = 180  # seconds
         POLL_INTERVAL = 2  # seconds
@@ -541,20 +560,30 @@ class ShipyardNeoBooter(ComputerBooter):
                 )
                 return
 
+            if allow_idle and status == "idle":
+                logger.info(
+                    "[Computer] Resumed idle sandbox %s (profile=%s); "
+                    "Bay will start a session on first command",
+                    sandbox_id,
+                    sandbox.profile,
+                )
+                return
+
             if status in {"failed", "expired"}:
                 logger.error(
                     "[Computer] Sandbox %s reached terminal state: %s",
                     sandbox_id,
                     status,
                 )
-                try:
-                    await sandbox.delete()
-                except Exception as del_err:
-                    logger.warning(
-                        "[Computer] Failed to delete failed sandbox %s: %s",
-                        sandbox_id,
-                        del_err,
-                    )
+                if delete_on_failure:
+                    try:
+                        await sandbox.delete()
+                    except Exception as del_err:
+                        logger.warning(
+                            "[Computer] Failed to delete failed sandbox %s: %s",
+                            sandbox_id,
+                            del_err,
+                        )
                 raise RuntimeError(
                     f"Sandbox {sandbox_id} is in terminal state: {status}"
                 )
@@ -568,14 +597,15 @@ class ShipyardNeoBooter(ComputerBooter):
                     READINESS_TIMEOUT,
                     status,
                 )
-                try:
-                    await sandbox.delete()
-                except Exception as del_err:
-                    logger.warning(
-                        "[Computer] Failed to delete timed-out sandbox %s: %s",
-                        sandbox_id,
-                        del_err,
-                    )
+                if delete_on_failure:
+                    try:
+                        await sandbox.delete()
+                    except Exception as del_err:
+                        logger.warning(
+                            "[Computer] Failed to delete timed-out sandbox %s: %s",
+                            sandbox_id,
+                            del_err,
+                        )
                 raise TimeoutError(
                     f"Sandbox {sandbox_id} did not become ready within "
                     f"{READINESS_TIMEOUT}s (last status: {status})"
