@@ -13,9 +13,6 @@ from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo_endpoint imp
     is_shipyard_neo_auto_endpoint,
     normalize_shipyard_neo_endpoint,
 )
-from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import (
-    SHIPYARD_NEO_TOOL_MODULE_PREFIX,
-)
 
 
 class FakeReadySandbox:
@@ -459,15 +456,8 @@ async def test_shipyard_neo_terminate_detaches_even_if_cleanup_fails(monkeypatch
     def fake_detach(provider_id):
         calls.append(("detach", provider_id))
 
-    def fake_unregister():
-        calls.append(("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX))
-        return ["astrbot_execute_browser"]
-
     monkeypatch.setattr(plugin_main, "cleanup_sandbox_provider", fake_cleanup)
     monkeypatch.setattr(plugin_main, "detach_sandbox_provider", fake_detach)
-    monkeypatch.setattr(
-        plugin_main, "_unregister_shipyard_neo_builtin_tools", fake_unregister
-    )
 
     plugin = plugin_main.ShipyardNeoSandboxRuntimePlugin.__new__(
         plugin_main.ShipyardNeoSandboxRuntimePlugin
@@ -480,7 +470,6 @@ async def test_shipyard_neo_terminate_detaches_even_if_cleanup_fails(monkeypatch
     assert calls == [
         ("cleanup", "shipyard_neo"),
         ("detach", "shipyard_neo"),
-        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
     ]
 
 
@@ -497,15 +486,8 @@ async def test_shipyard_neo_terminate_detaches_on_successful_cleanup(monkeypatch
     def fake_detach(provider_id):
         calls.append(("detach", provider_id))
 
-    def fake_unregister():
-        calls.append(("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX))
-        return ["astrbot_execute_browser"]
-
     monkeypatch.setattr(plugin_main, "cleanup_sandbox_provider", fake_cleanup)
     monkeypatch.setattr(plugin_main, "detach_sandbox_provider", fake_detach)
-    monkeypatch.setattr(
-        plugin_main, "_unregister_shipyard_neo_builtin_tools", fake_unregister
-    )
 
     plugin = plugin_main.ShipyardNeoSandboxRuntimePlugin.__new__(
         plugin_main.ShipyardNeoSandboxRuntimePlugin
@@ -517,190 +499,7 @@ async def test_shipyard_neo_terminate_detaches_on_successful_cleanup(monkeypatch
     assert calls == [
         ("cleanup", "shipyard_neo"),
         ("detach", "shipyard_neo"),
-        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
     ]
-
-
-def test_shipyard_neo_finalize_clears_builtin_tool_cache(monkeypatch):
-    calls = []
-
-    class FakeToolManager:
-        def clear_builtin_tool_cache_by_module_prefix(self, module_prefix):
-            calls.append(("clear_cache", module_prefix))
-            return ["astrbot_execute_browser"]
-
-    class FakeContext:
-        def get_llm_tool_manager(self):
-            return FakeToolManager()
-
-    class FakeProvider:
-        provider_id = "shipyard_neo"
-
-    def fake_detach(provider_id):
-        calls.append(("detach", provider_id))
-
-    def fake_unregister():
-        calls.append(("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX))
-        return ["astrbot_execute_browser"]
-
-    monkeypatch.setattr(plugin_main, "detach_sandbox_provider", fake_detach)
-    monkeypatch.setattr(
-        plugin_main, "_unregister_shipyard_neo_builtin_tools", fake_unregister
-    )
-
-    plugin_main._finalize_shipyard_neo_provider("shipyard_neo", FakeContext())
-
-    assert calls == [
-        ("detach", "shipyard_neo"),
-        ("clear_cache", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
-        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
-    ]
-
-
-def test_shipyard_neo_finalize_swallows_builtin_tool_cache_errors(monkeypatch):
-    calls = []
-
-    class ErrorToolManager:
-        def clear_builtin_tool_cache_by_module_prefix(self, module_prefix):
-            calls.append(("clear_cache_error", module_prefix))
-            raise RuntimeError("cache clear failed")
-
-    class FakeContext:
-        def get_llm_tool_manager(self):
-            return ErrorToolManager()
-
-    def fake_detach(provider_id):
-        calls.append(("detach", provider_id))
-
-    def fake_unregister():
-        calls.append(("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX))
-        return ["astrbot_execute_browser"]
-
-    monkeypatch.setattr(plugin_main, "detach_sandbox_provider", fake_detach)
-    monkeypatch.setattr(
-        plugin_main, "_unregister_shipyard_neo_builtin_tools", fake_unregister
-    )
-
-    plugin_main._finalize_shipyard_neo_provider("shipyard_neo", FakeContext())
-
-    assert calls == [
-        ("detach", "shipyard_neo"),
-        ("clear_cache_error", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
-        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
-    ]
-
-
-def test_shipyard_neo_unregister_builtin_tools_uses_compatibility_fallback(
-    monkeypatch,
-):
-    class FakeTool:
-        __module__ = f"{SHIPYARD_NEO_TOOL_MODULE_PREFIX}.browser"
-
-    classes_by_name = {"astrbot_execute_browser": FakeTool}
-    names_by_class = {FakeTool: "astrbot_execute_browser"}
-    config_rules = {"astrbot_execute_browser": object()}
-
-    monkeypatch.setattr(
-        plugin_main.tool_registry,
-        "unregister_builtin_tools_by_module_prefix",
-        None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        plugin_main.tool_registry,
-        "iter_builtin_tool_classes",
-        None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        plugin_main.tool_registry,
-        "unregister_builtin_tool_class",
-        None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        plugin_main.tool_registry,
-        "_builtin_tool_classes_by_name",
-        classes_by_name,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        plugin_main.tool_registry,
-        "_builtin_tool_names_by_class",
-        names_by_class,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        plugin_main.tool_registry,
-        "_BUILTIN_TOOL_CONFIG_RULES",
-        config_rules,
-        raising=False,
-    )
-
-    removed = plugin_main._unregister_shipyard_neo_builtin_tools()
-
-    assert removed == ["astrbot_execute_browser"]
-    assert classes_by_name == {}
-    assert names_by_class == {}
-    assert config_rules == {}
-
-
-@pytest.mark.asyncio
-async def test_shipyard_neo_terminate_logs_unregister_failure_without_masking_cleanup(
-    monkeypatch,
-):
-    calls = []
-
-    class FakeProvider:
-        provider_id = "shipyard_neo"
-
-    async def fake_cleanup(provider_id):
-        calls.append(("cleanup", provider_id))
-
-    def fake_detach(provider_id):
-        calls.append(("detach", provider_id))
-
-    def fake_unregister():
-        calls.append(("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX))
-        raise RuntimeError("unregister failed")
-
-    warnings = []
-
-    def fake_warning(*args, **kwargs):
-        class FakeWarningRecord:
-            exc_info = kwargs.get("exc_info")
-
-            def getMessage(self):
-                message = str(args[0])
-                if len(args) > 1:
-                    return message % args[1:]
-                return message
-
-        warnings.append(FakeWarningRecord())
-
-    monkeypatch.setattr(plugin_main, "cleanup_sandbox_provider", fake_cleanup)
-    monkeypatch.setattr(plugin_main, "detach_sandbox_provider", fake_detach)
-    monkeypatch.setattr(
-        plugin_main, "_unregister_shipyard_neo_builtin_tools", fake_unregister
-    )
-    monkeypatch.setattr(plugin_main.logger, "warning", fake_warning)
-
-    plugin = plugin_main.ShipyardNeoSandboxRuntimePlugin.__new__(
-        plugin_main.ShipyardNeoSandboxRuntimePlugin
-    )
-    plugin.provider = FakeProvider()
-
-    await plugin.terminate()
-
-    assert calls == [
-        ("cleanup", "shipyard_neo"),
-        ("detach", "shipyard_neo"),
-        ("unregister", SHIPYARD_NEO_TOOL_MODULE_PREFIX),
-    ]
-    assert len(warnings) == 1
-    warning = warnings[0]
-    assert "Shipyard Neo builtin tool cleanup failed" in warning.getMessage()
-    assert warning.exc_info
 
 
 def test_shipyard_neo_provider_update_connect_info_populates_legacy_persistent_name_from_sandbox_id():
@@ -1682,7 +1481,7 @@ async def test_shipyard_neo_boot_closes_client_when_readiness_fails(monkeypatch)
         lambda **kwargs: FakeClient(),
     )
 
-    async def fail_readiness(self, sandbox):
+    async def fail_readiness(self, sandbox, **kwargs):
         raise RuntimeError("sandbox failed")
 
     monkeypatch.setattr(ShipyardNeoBooter, "_wait_until_ready", fail_readiness)
