@@ -32,6 +32,13 @@ def _to_json_text(data: Any) -> str:
     return json.dumps(_to_jsonable(data), ensure_ascii=False, default=str)
 
 
+def _optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 async def _get_neo_context(
     context: ContextWrapper[AstrAgentContext],
 ) -> tuple[Any, Any]:
@@ -104,11 +111,11 @@ class GetExecutionHistoryTool(NeoSkillToolBase):
         return await self._run(
             context,
             lambda _client, sandbox: sandbox.get_execution_history(
-                exec_type=exec_type,
+                exec_type=_optional_text(exec_type),
                 success_only=success_only,
                 limit=limit,
                 offset=offset,
-                tags=tags,
+                tags=_optional_text(tags),
                 has_notes=has_notes,
                 has_description=has_description,
             ),

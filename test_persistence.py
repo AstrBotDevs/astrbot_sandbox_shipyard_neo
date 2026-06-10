@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from data.plugins.astrbot_sandbox_shipyard_neo import main as plugin_main
 from data.plugins.astrbot_sandbox_shipyard_neo import provider as provider_module
 from data.plugins.astrbot_sandbox_shipyard_neo.booters import shipyard_neo
@@ -145,6 +146,41 @@ def test_shipyard_neo_provider_excludes_browser_tools_for_python_default():
 
     assert "browser" not in provider.capabilities
     assert BROWSER_TOOL_NAMES.isdisjoint(provider.tool_names)
+
+
+@pytest.mark.asyncio
+async def test_execution_history_tool_ignores_empty_optional_filters(monkeypatch):
+    from data.plugins.astrbot_sandbox_shipyard_neo.tools.shipyard_neo import neo_skills
+
+    recorded = {}
+
+    class FakeSandbox:
+        async def get_execution_history(self, **kwargs):
+            recorded.update(kwargs)
+            return []
+
+    fake_context = SimpleNamespace(
+        context=SimpleNamespace(
+            context=object(),
+            event=SimpleNamespace(unified_msg_origin="session-1"),
+        )
+    )
+
+    async def fake_get_booter(*args, **kwargs):
+        return SimpleNamespace(bay_client=object(), sandbox=FakeSandbox())
+
+    monkeypatch.setattr(neo_skills, "check_admin_permission", lambda *a, **k: None)
+    monkeypatch.setattr(neo_skills, "get_booter", fake_get_booter)
+
+    result = await neo_skills.GetExecutionHistoryTool().call(
+        fake_context,
+        exec_type="   ",
+        tags="",
+    )
+
+    assert result == "[]"
+    assert recorded["exec_type"] is None
+    assert recorded["tags"] is None
 
 
 def test_shipyard_neo_provider_normalizes_none_profile_consistently():
@@ -857,10 +893,11 @@ async def test_shipyard_neo_provider_uses_config_overrides_without_keyword_confl
 async def test_shipyard_neo_booter_resume_does_not_create_when_sandbox_missing(
     monkeypatch,
 ):
+    from shipyard_neo.errors import NotFoundError
+
     from data.plugins.astrbot_sandbox_shipyard_neo.booters.shipyard_neo import (
         ShipyardNeoBooter,
     )
-    from shipyard_neo.errors import NotFoundError
 
     recorded = []
 
